@@ -81,6 +81,24 @@ function sessionsThisWeek(workouts) {
   var cutoff=new Date(Date.now()-7*24*60*60*1000);
   return workouts.filter(function(w){ return new Date(w.date+'T12:00:00')>=cutoff; }).length;
 }
+function prsThisWeek(workouts) {
+  var cutoff=new Date(Date.now()-7*24*60*60*1000);
+  var sorted=workouts.slice().sort(function(a,b){return a.date<b.date?-1:1;});
+  var prSet={};
+  sorted.forEach(function(w,wIdx){
+    if(new Date(w.date+'T12:00:00')<cutoff) return; // only look at last 7 days
+    w.exercises.forEach(function(ex){
+      var sMax=exMax(ex); if(sMax===0) return;
+      var prevBest=0;
+      for(var i=0;i<wIdx;i++){
+        var pe=sorted[i].exercises.find(function(e){return e.name===ex.name;});
+        if(pe) prevBest=Math.max(prevBest,exMax(pe));
+      }
+      if(prevBest>0&&sMax>prevBest) prSet[ex.name]=1; // new all-time max vs everything before
+    });
+  });
+  return Object.keys(prSet).length;
+}
 
 function autoLabel(ds) {
   var d=new Date(ds+'T12:00:00');
@@ -433,16 +451,18 @@ function WorkoutTracker(props) {
   // Dashboard
   var totalLbs=workouts.reduce(function(s,w){return s+wVol(w);},0);
   var thisWeek=sessionsThisWeek(workouts);
+  var prCount=prsThisWeek(workouts);
   var volData=workouts.map(function(w){return{label:w.label,volume:wVol(w)};});
 
   return ce('div',{style:{padding:20}},
-    // Top stats: Sessions | This Week | Total Lifted
+    // Top stats: Sessions | This Week | PRs | Lifted
     ce('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-end',marginBottom:20}},
-      ce('div',{style:{display:'flex',gap:20}},
-        [['Sessions',workouts.length],['This Week',thisWeek],['Lifted',(totalLbs/1000).toFixed(1)+'k lbs']].map(function(pair){
-          return ce('div',{key:pair[0]},
-            ce('div',{style:{fontSize:20,fontWeight:700}},String(pair[1])),
-            ce('div',{style:{fontSize:10,color:C.muted,textTransform:'uppercase',letterSpacing:.5}},pair[0]));
+      ce('div',{style:{display:'flex',gap:14}},
+        [['Sessions',workouts.length,C.text],['This Week',thisWeek,C.text],['PRs 7 Days',prCount,prCount>0?'#f59e0b':C.muted],['Lifted',(totalLbs/1000).toFixed(1)+'k',C.text]].map(function(row){
+          var k=row[0],v=row[1],col=row[2];
+          return ce('div',{key:k},
+            ce('div',{style:{fontSize:20,fontWeight:700,color:col}},String(v)),
+            ce('div',{style:{fontSize:10,color:C.muted,textTransform:'uppercase',letterSpacing:.5}},k));
         })),
       ce('button',{onClick:function(){setShowAdd(true);},style:{background:C.accent,color:'#fff',border:'none',borderRadius:10,padding:'10px 16px',cursor:'pointer',fontSize:13,fontWeight:700}},'+ Add')),
 
@@ -521,7 +541,7 @@ function App() {
           'WORKOUT ',ce('span',{style:{color:C.accent}},'TRACKER')),
         ce('div',{style:{display:'flex',alignItems:'center',gap:10}},
           ce(SyncBadge,{status:syncStatus}),
-          ce('button',{onClick:changeUser,style:{background:C.card2,border:'1px solid '+C.border,color:C.muted,borderRadius:8,padding:'6px 11px',cursor:'pointer',fontSize:12,fontWeight:600,whiteSpace:'nowrap'}},'Change User'))),
+          ce('button',{onClick:changeUser,style:{background:C.card2,border:'1px solid '+C.border,color:C.muted,borderRadius:8,padding:'6px 11px',cursor:'pointer',fontSize:12,fontWeight:600,whiteSpace:'nowrap'}},'Logout'))),
       // Tabs — dimmed and non-clickable while loading
       ce('div',{style:{display:'flex',gap:4}},
         [['john','John'],['charlie','Charlie']].map(function(pair){
