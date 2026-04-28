@@ -22,7 +22,6 @@
 </head>
 <body>
 <div id="root"></div>
-<!-- React 18 UMD — no eval, no modules, works everywhere -->
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script>
@@ -78,79 +77,78 @@ const exVol    = ex => ex.sets.reduce((s,set)=>s+set.reps*set.weight,0);
 const wSets    = w  => w.exercises.reduce((s,ex)=>s+ex.sets.length,0);
 const cleanBin = raw=> Array.isArray(raw)?raw.filter(x=>x&&typeof x==='object'&&x.date&&Array.isArray(x.exercises)):[];
 
+function sessionsThisWeek(workouts) {
+  var cutoff=new Date(Date.now()-7*24*60*60*1000);
+  return workouts.filter(function(w){ return new Date(w.date+'T12:00:00')>=cutoff; }).length;
+}
+
 function autoLabel(ds) {
-  const d=new Date(ds+'T12:00:00');
+  var d=new Date(ds+'T12:00:00');
   return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()]+' '+d.getDate()+' '+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()];
 }
 function parseWorkoutText(text) {
-  const exercises=[], blocks=text.split(/Exercise:\s*Optional\s*\(\s*"/);
-  for(let i=1;i<blocks.length;i++){
-    const block=blocks[i], nameEnd=block.indexOf('"');
+  var exercises=[], blocks=text.split(/Exercise:\s*Optional\s*\(\s*"/);
+  for(var i=1;i<blocks.length;i++){
+    var block=blocks[i], nameEnd=block.indexOf('"');
     if(nameEnd===-1) continue;
-    const name=block.substring(0,nameEnd).trim(), sets=[];
-    for(const m of block.matchAll(/- (\d+)\s+reps\s+x\s+([\d.]+)/g))
-      sets.push({reps:parseInt(m[1]),weight:parseFloat(m[2])});
-    if(sets.length&&name) exercises.push({name,sets});
+    var name=block.substring(0,nameEnd).trim(), sets=[];
+    var re=/- (\d+)\s+reps\s+x\s+([\d.]+)/g, m;
+    while((m=re.exec(block))!==null) sets.push({reps:parseInt(m[1]),weight:parseFloat(m[2])});
+    if(sets.length&&name) exercises.push({name:name,sets:sets});
   }
   return exercises;
 }
 
 // ── JSONBin ───────────────────────────────────────────────
-const binUrl = p=>'https://api.jsonbin.io/v3/b/'+BINS[p];
-const bHdrs  = {'X-Access-Key':API_KEY};
-async function fetchBin(p){ const r=await fetch(binUrl(p),{headers:bHdrs}); if(!r.ok) throw new Error(); return (await r.json()).record; }
-async function saveBin(p,data){ const r=await fetch(binUrl(p),{method:'PUT',headers:Object.assign({'Content-Type':'application/json'},bHdrs),body:JSON.stringify(data)}); if(!r.ok) throw new Error(); }
+var bHdrs={'X-Access-Key':API_KEY};
+function binUrl(p){ return 'https://api.jsonbin.io/v3/b/'+BINS[p]; }
+function fetchBin(p){ return fetch(binUrl(p),{headers:bHdrs}).then(function(r){ if(!r.ok) throw new Error(); return r.json(); }).then(function(j){ return j.record; }); }
+function saveBin(p,data){ return fetch(binUrl(p),{method:'PUT',headers:Object.assign({'Content-Type':'application/json'},bHdrs),body:JSON.stringify(data)}).then(function(r){ if(!r.ok) throw new Error(); }); }
 
-// ── Shared style objects ──────────────────────────────────
-const iSt   = {width:'100%',background:C.card2,border:'1px solid '+C.border,borderRadius:8,padding:'10px 12px',color:C.text,fontSize:14};
-const lblSt = {fontSize:11,color:C.muted,display:'block',marginBottom:6,textTransform:'uppercase',letterSpacing:'.5px'};
+// ── Shared styles ─────────────────────────────────────────
+var iSt  ={width:'100%',background:C.card2,border:'1px solid '+C.border,borderRadius:8,padding:'10px 12px',color:C.text,fontSize:14};
+var lblSt={fontSize:11,color:C.muted,display:'block',marginBottom:6,textTransform:'uppercase',letterSpacing:'.5px'};
 
 // ── UserPicker ────────────────────────────────────────────
-function UserPicker({onPick}) {
-  const people = [
-    ['john',   'John',    '💪', 'Lift heavy, lift often'],
-    ['charlie','Charlie', '🌟', 'Progressive overload queen'],
-  ];
+function UserPicker(props) {
+  var people=[['john','John','💪','Lift heavy, lift often'],['charlie','Charlie','🌟','Progressive overload queen']];
   return ce('div',{style:{position:'fixed',inset:0,background:C.bg,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',zIndex:200,padding:24}},
     ce('div',{style:{fontSize:40,marginBottom:16}},'🏋️'),
     ce('h1',{style:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:34,fontWeight:800,letterSpacing:1,marginBottom:6,textAlign:'center'}},
       'WORKOUT ',ce('span',{style:{color:C.accent}},'TRACKER')),
     ce('p',{style:{color:C.muted,fontSize:15,marginBottom:40}},"Who's training today?"),
     ce('div',{style:{display:'flex',flexDirection:'column',gap:14,width:'100%',maxWidth:300}},
-      people.map(function([id,name,emoji,sub]){
-        return ce('button',{key:id,className:'pick-card',onClick:function(){onPick(id);},
+      people.map(function(row){
+        var id=row[0],name=row[1],emoji=row[2],sub=row[3];
+        return ce('button',{key:id,className:'pick-card',onClick:function(){props.onPick(id);},
           style:{background:C.card,border:'2px solid '+C.border,borderRadius:16,padding:'20px 22px',cursor:'pointer',display:'flex',alignItems:'center',gap:16,width:'100%',textAlign:'left'}},
           ce('span',{style:{fontSize:34}},emoji),
           ce('div',{style:{flex:1}},
             ce('div',{style:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:24,fontWeight:800,color:C.text}},name),
-            ce('div',{style:{fontSize:12,color:C.muted,marginTop:2}},sub)
-          ),
-          ce('span',{style:{color:C.accent,fontSize:20,fontWeight:700}},'→')
-        );
-      })
-    )
-  );
+            ce('div',{style:{fontSize:12,color:C.muted,marginTop:2}},sub)),
+          ce('span',{style:{color:C.accent,fontSize:20,fontWeight:700}},'→'));
+      })));
 }
 
 // ── PinModal ──────────────────────────────────────────────
-function PinModal({person,onSuccess,onBack}) {
-  const [pin,setPin]       = useState('');
-  const [error,setError]   = useState('');
-  const [remember,setRemember] = useState(true);
-  const ref = useRef(null);
+function PinModal(props) {
+  var s1=useState(''),  pin=s1[0],     setPin=s1[1];
+  var s2=useState(''),  error=s2[0],   setError=s2[1];
+  var s3=useState(true),remember=s3[0],setRemember=s3[1];
+  var ref=useRef(null);
   useEffect(function(){ setTimeout(function(){ if(ref.current) ref.current.focus(); },120); },[]);
   function submit(){
-    if(pin===PINS[person]){
-      if(remember) localStorage.setItem('workout-auth-'+person,'true');
-      onSuccess();
+    if(pin===PINS[props.person]){
+      if(remember) localStorage.setItem('workout-auth-'+props.person,'true');
+      props.onSuccess();
     } else { setError('Wrong PIN — try again'); setPin(''); if(ref.current) ref.current.focus(); }
   }
   return ce('div',{style:{position:'fixed',inset:0,background:C.bg,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',zIndex:200,padding:24}},
-    ce('button',{onClick:onBack,style:{position:'absolute',top:20,left:20,background:'none',border:'none',color:C.muted,cursor:'pointer',fontSize:14}},'← Back'),
+    ce('button',{onClick:props.onBack,style:{position:'absolute',top:20,left:20,background:'none',border:'none',color:C.muted,cursor:'pointer',fontSize:14}},'← Back'),
     ce('div',{style:{background:C.card,borderRadius:20,padding:'36px 28px',width:'100%',maxWidth:320,textAlign:'center',animation:'fadeIn .25s ease'}},
       ce('div',{style:{width:54,height:54,background:C.accent+'22',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 18px',fontSize:22}},'🔒'),
       ce('h2',{style:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:26,fontWeight:800,marginBottom:6}},
-        (person==='john'?'John':'Charlie')+"'s ",ce('span',{style:{color:C.accent}},'Workouts')),
+        (props.person==='john'?'John':'Charlie')+"'s ",ce('span',{style:{color:C.accent}},'Workouts')),
       ce('p',{style:{color:C.muted,fontSize:13,marginBottom:26}},'Enter your PIN to continue'),
       ce('input',{ref:ref,type:'password',inputMode:'numeric',maxLength:8,value:pin,
         onInput:function(e){setPin(e.target.value);setError('');},
@@ -161,54 +159,52 @@ function PinModal({person,onSuccess,onBack}) {
       ce('label',{style:{display:'flex',alignItems:'center',justifyContent:'center',gap:8,marginBottom:20,cursor:'pointer',color:C.muted,fontSize:13}},
         ce('input',{type:'checkbox',checked:remember,onChange:function(e){setRemember(e.target.checked);},style:{width:16,height:16,accentColor:C.accent,cursor:'pointer'}}),
         'Remember me on this device'),
-      ce('button',{onClick:submit,style:{width:'100%',background:C.accent,color:'#fff',border:'none',borderRadius:10,padding:13,fontSize:15,fontWeight:700,cursor:'pointer'}},'Unlock')
-    )
-  );
+      ce('button',{onClick:submit,style:{width:'100%',background:C.accent,color:'#fff',border:'none',borderRadius:10,padding:13,fontSize:15,fontWeight:700,cursor:'pointer'}},'Unlock')));
 }
 
 // ── SyncBadge ─────────────────────────────────────────────
-function SyncBadge({status}) {
+function SyncBadge(props) {
   var cfg={loading:[C.muted,'Loading…'],saving:[C.muted,'Saving…'],saved:[C.teal,'✓ Synced'],error:['#f87171','⚠ Offline']};
-  var pair=cfg[status]; if(!pair) return null;
-  var col=pair[0], label=pair[1], spin=status==='loading'||status==='saving';
+  var pair=cfg[props.status]; if(!pair) return null;
+  var col=pair[0],label=pair[1],spin=props.status==='loading'||props.status==='saving';
   return ce('span',{style:{fontSize:11,color:col,display:'flex',alignItems:'center',gap:5}},
     spin?ce('span',{style:{display:'inline-block',width:10,height:10,border:'1.5px solid '+col,borderTopColor:'transparent',borderRadius:'50%',animation:'spin .7s linear infinite'}}):null,
     label);
 }
 
 // ── BarChart ──────────────────────────────────────────────
-function BarChart({data,selectedIdx,onSelect}) {
+function BarChart(props) {
+  var data=props.data,selectedIdx=props.selectedIdx,onSelect=props.onSelect;
   if(!data.length) return null;
   var max=Math.max.apply(null,data.map(function(d){return d.volume;}).concat([1]));
   var vW=420,H=120,pL=48,pB=22,pT=12,pR=8,plotW=vW-pL-pR,plotH=H-pB-pT;
-  var step=plotW/data.length, barW=Math.min(44,step*0.6);
-  var gridLines=[0,Math.round(max*.5),max].reduce(function(acc,v){
+  var step=plotW/data.length,barW=Math.min(44,step*0.6);
+  var grid=[0,Math.round(max*.5),max].reduce(function(acc,v){
     var y=pT+plotH-(v/max)*plotH;
     acc.push(ce('line',{key:'l'+v,x1:pL,y1:y,x2:vW-pR,y2:y,stroke:C.border,strokeWidth:0.5}));
     acc.push(ce('text',{key:'t'+v,x:pL-5,y:y+4,textAnchor:'end',fill:C.muted,fontSize:9},v>999?Math.round(v/1000)+'k':String(v)));
     return acc;
   },[]);
   var bars=data.map(function(d,i){
-    var x=pL+i*step+step/2-barW/2, bH=Math.max((d.volume/max)*plotH,2), y=pT+plotH-bH;
-    var sel=selectedIdx===i;
+    var x=pL+i*step+step/2-barW/2,bH=Math.max((d.volume/max)*plotH,2),y=pT+plotH-bH,sel=selectedIdx===i;
     return ce('g',{key:i,style:{cursor:'pointer'},onClick:function(){onSelect(sel?null:i);}},
       ce('rect',{x:x,y:y,width:barW,height:bH,fill:sel?C.teal:C.accent,rx:4,opacity:selectedIdx!==null&&!sel?0.45:1}),
       sel?ce('rect',{x:x-2,y:y-2,width:barW+4,height:bH+2,fill:'none',stroke:C.teal,strokeWidth:1.5,rx:5,opacity:0.6}):null,
-      ce('text',{x:x+barW/2,y:H-4,textAnchor:'middle',fill:sel?C.teal:C.muted,fontSize:10,fontWeight:sel?700:400},d.label)
-    );
+      ce('text',{x:x+barW/2,y:H-4,textAnchor:'middle',fill:sel?C.teal:C.muted,fontSize:10,fontWeight:sel?700:400},d.label));
   });
-  return ce('svg',{viewBox:'0 0 '+vW+' '+H,style:{width:'100%',height:H}},gridLines,bars);
+  return ce('svg',{viewBox:'0 0 '+vW+' '+H,style:{width:'100%',height:H}},grid,bars);
 }
 
 // ── LineChart ─────────────────────────────────────────────
-function LineChart({data}) {
+function LineChart(props) {
+  var data=props.data;
   if(data.length<2) return ce('div',{style:{textAlign:'center',padding:'36px 0',color:C.muted,fontSize:13}},'Add more workouts to see a trend');
-  var vals=data.map(function(d){return d.value;}), max=Math.max.apply(null,vals), min=Math.min.apply(null,vals), range=max-min||1;
+  var vals=data.map(function(d){return d.value;}),max=Math.max.apply(null,vals),min=Math.min.apply(null,vals),range=max-min||1;
   var vW=420,H=180,pL=48,pB=24,pT=16,pR=16,plotW=vW-pL-pR,plotH=H-pB-pT,step=plotW/(data.length-1);
   var pts=data.map(function(d,i){return Object.assign({},d,{x:pL+i*step,y:pT+plotH-((d.value-min)/range)*plotH});});
   var pD=pts.map(function(p,i){return (i===0?'M':'L')+' '+p.x.toFixed(1)+' '+p.y.toFixed(1);}).join(' ');
   var aD=pD+' L '+pts[pts.length-1].x+' '+(pT+plotH)+' L '+pL+' '+(pT+plotH)+' Z';
-  var gridLines=[min,Math.round((min+max)/2),max].reduce(function(acc,v){
+  var grid=[min,Math.round((min+max)/2),max].reduce(function(acc,v){
     var y=pT+plotH-((v-min)/range)*plotH;
     acc.push(ce('line',{key:'gl'+v,x1:pL,y1:y,x2:vW-pR,y2:y,stroke:C.border,strokeWidth:0.5}));
     acc.push(ce('text',{key:'gt'+v,x:pL-5,y:y+4,textAnchor:'end',fill:C.muted,fontSize:9},String(v)));
@@ -223,37 +219,36 @@ function LineChart({data}) {
     ce('defs',null,ce('linearGradient',{id:'lg',x1:'0',y1:'0',x2:'0',y2:'1'},
       ce('stop',{offset:'0%',stopColor:C.accent,stopOpacity:0.25}),
       ce('stop',{offset:'100%',stopColor:C.accent,stopOpacity:0}))),
-    gridLines,
+    grid,
     ce('path',{d:aD,fill:'url(#lg)'}),
     ce('path',{d:pD,fill:'none',stroke:C.accent,strokeWidth:2.5,strokeLinecap:'round',strokeLinejoin:'round'}),
-    dots
-  );
+    dots);
 }
 
 // ── SessionDetail ─────────────────────────────────────────
-function SessionDetail({workout}) {
-  var total=wVol(workout), sets=wSets(workout);
+function SessionDetail(props) {
+  var w=props.workout,total=wVol(w),sets=wSets(w);
   return ce('div',{style:{background:C.card2,border:'1px solid '+C.teal+'44',borderRadius:12,padding:16,marginTop:10,animation:'slideDown .2s ease'}},
     ce('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14}},
       ce('div',null,
-        ce('div',{style:{fontWeight:700,fontSize:15,color:C.teal}},workout.label),
-        ce('div',{style:{fontSize:12,color:C.muted,marginTop:3}},workout.exercises.length+' exercises · '+sets+' total sets')),
+        ce('div',{style:{fontWeight:700,fontSize:15,color:C.teal}},w.label),
+        ce('div',{style:{fontSize:12,color:C.muted,marginTop:3}},w.exercises.length+' exercises · '+sets+' sets'+(w.duration?' · '+w.duration+' min':'')),
+      ),
       ce('div',{style:{textAlign:'right'}},
         ce('div',{style:{fontSize:20,fontWeight:700,color:C.accent}},total.toLocaleString()),
         ce('div',{style:{fontSize:10,color:C.muted}},'lbs lifted'))),
-    ce('div',null,workout.exercises.map(function(ex,i){
+    ce('div',null,w.exercises.map(function(ex,i){
       return ce('div',{key:i,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 0',borderTop:'1px solid '+C.border}},
         ce('span',{style:{fontSize:12,color:C.text,flex:1}},ex.name),
         ce('div',{style:{display:'flex',gap:14,alignItems:'center'}},
           ce('span',{style:{fontSize:11,color:C.muted}},ex.sets.length+' sets'),
-          ce('span',{style:{fontSize:12,fontWeight:700,color:C.teal,minWidth:52,textAlign:'right'}},exMax(ex)>0?exMax(ex)+' lbs':'BW')
-        ));
-    }))
-  );
+          ce('span',{style:{fontSize:12,fontWeight:700,color:C.teal,minWidth:52,textAlign:'right'}},exMax(ex)>0?exMax(ex)+' lbs':'BW')));
+    })));
 }
 
 // ── TrendStats ────────────────────────────────────────────
-function TrendStats({workouts}) {
+function TrendStats(props) {
+  var workouts=props.workouts;
   if(!workouts.length) return null;
   var vols=workouts.map(wVol);
   var avgVol=Math.round(vols.reduce(function(s,v){return s+v;},0)/vols.length);
@@ -265,12 +260,16 @@ function TrendStats({workouts}) {
   var deltaCol=lastDelta===null?C.muted:lastDelta>0?C.teal:lastDelta<0?'#f87171':C.muted;
   var deltaStr=lastDelta===null?'—':(lastDelta>0?'+':'')+(lastDelta/1000).toFixed(1)+'k lbs';
   var deltaIcon=lastDelta===null?'':lastDelta>0?'▲ ':lastDelta<0?'▼ ':'';
+  // Duration
+  var withDuration=workouts.filter(function(w){return w.duration&&w.duration>0;});
+  var avgDur=withDuration.length?Math.round(withDuration.reduce(function(s,w){return s+w.duration;},0)/withDuration.length):null;
   var stats=[
-    ['Avg Volume',     (avgVol/1000).toFixed(1)+'k lbs',          null,     C.text],
-    ['Best Session',   (bestVol/1000).toFixed(1)+'k lbs',         bestLbl,  C.text],
-    ['vs Last Session',deltaIcon+deltaStr,                         null,     deltaCol],
-    ['Avg Per Session',avgEx+' ex · '+avgSets+' sets',             null,     C.text],
+    ['Avg Volume',     (avgVol/1000).toFixed(1)+'k lbs', null,    C.text],
+    ['Best Session',   (bestVol/1000).toFixed(1)+'k lbs',bestLbl, C.text],
+    ['vs Last',        deltaIcon+deltaStr,                null,    deltaCol],
+    ['Avg Per Session',avgEx+' ex · '+avgSets+' sets',   null,    C.text],
   ];
+  if(avgDur!==null) stats.push(['Avg Duration',avgDur+' min',withDuration.length+' sessions tracked',C.text]);
   return ce('div',{style:{marginBottom:22}},
     ce('div',{style:{fontSize:10,color:C.muted,textTransform:'uppercase',letterSpacing:1,marginBottom:10}},'Trends'),
     ce('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}},
@@ -279,11 +278,8 @@ function TrendStats({workouts}) {
         return ce('div',{key:k,style:{background:C.card,borderRadius:10,padding:'12px 14px'}},
           ce('div',{style:{fontSize:10,color:C.muted,textTransform:'uppercase',letterSpacing:.5,marginBottom:5}},k),
           ce('div',{style:{fontSize:15,fontWeight:700,color:col}},v),
-          sub?ce('div',{style:{fontSize:10,color:C.muted,marginTop:2}},sub):null
-        );
-      })
-    )
-  );
+          sub?ce('div',{style:{fontSize:10,color:C.muted,marginTop:2}},sub):null);
+      })));
 }
 
 // ── AddModal ──────────────────────────────────────────────
@@ -299,34 +295,38 @@ function AddModal(props) {
       ce('input',{type:'date',value:p.addDate,onChange:function(e){p.setAddDate(e.target.value);},style:Object.assign({},iSt,{marginBottom:14})}),
       ce('label',{style:lblSt},'Label (optional)'),
       ce('input',{type:'text',value:p.addLabel,placeholder:'Auto-generated if blank',onChange:function(e){p.setAddLabel(e.target.value);},style:Object.assign({},iSt,{marginBottom:14})}),
+      ce('label',{style:lblSt},'Duration in minutes (optional)'),
+      ce('input',{type:'number',value:p.addDuration,placeholder:'e.g. 55',min:1,max:300,
+        onChange:function(e){p.setAddDuration(e.target.value);},style:Object.assign({},iSt,{marginBottom:14})}),
       ce('label',{style:lblSt},'Paste workout export'),
-      ce('textarea',{placeholder:'Paste the workout text from your app here…',onChange:function(e){p.setAddText(e.target.value);},
+      ce('textarea',{placeholder:'Paste the workout text from your app here…',
+        onChange:function(e){p.setAddText(e.target.value);},
         style:Object.assign({},iSt,{height:150,resize:'vertical',fontFamily:'monospace',fontSize:12,marginBottom:20})},p.addText),
       p.addError?ce('div',{style:{color:'#f87171',fontSize:13,marginBottom:12}},p.addError):null,
       p.addOk   ?ce('div',{style:{color:C.teal,fontSize:13,marginBottom:12,fontWeight:600}},'✓ Saved to cloud!'):null,
-      ce('button',{onClick:p.handleAdd,style:{width:'100%',background:C.accent,color:'#fff',border:'none',borderRadius:10,padding:14,fontSize:15,fontWeight:700,cursor:'pointer'}},'Parse & Save Workout')
-    )
-  );
+      ce('button',{onClick:p.handleAdd,style:{width:'100%',background:C.accent,color:'#fff',border:'none',borderRadius:10,padding:14,fontSize:15,fontWeight:700,cursor:'pointer'}},'Parse & Save Workout')));
 }
 
 // ── WorkoutTracker ────────────────────────────────────────
-function WorkoutTracker({person,onSync}) {
-  var s_workouts   = useState(null),   workouts   = s_workouts[0],   setWorkouts   = s_workouts[1];
-  var s_sessIdx    = useState(null),   sessionIdx = s_sessIdx[0],    setSessionIdx = s_sessIdx[1];
-  var s_selected   = useState(null),   selected   = s_selected[0],   setSelected   = s_selected[1];
-  var s_metric     = useState('maxWeight'), metric = s_metric[0],    setMetric     = s_metric[1];
-  var s_showAdd    = useState(false),  showAdd    = s_showAdd[0],    setShowAdd    = s_showAdd[1];
-  var s_addDate    = useState(''),     addDate    = s_addDate[0],    setAddDate    = s_addDate[1];
-  var s_addLabel   = useState(''),     addLabel   = s_addLabel[0],   setAddLabel   = s_addLabel[1];
-  var s_addText    = useState(''),     addText    = s_addText[0],    setAddText    = s_addText[1];
-  var s_addError   = useState(''),     addError   = s_addError[0],   setAddError   = s_addError[1];
-  var s_addOk      = useState(false),  addOk      = s_addOk[0],      setAddOk      = s_addOk[1];
-  var skipSave = useRef(true);
+function WorkoutTracker(props) {
+  var person=props.person,onSync=props.onSync;
+  var s1 =useState(null),  workouts  =s1[0],  setWorkouts  =s1[1];
+  var s2 =useState(null),  sessionIdx=s2[0],  setSessionIdx=s2[1];
+  var s3 =useState(null),  selected  =s3[0],  setSelected  =s3[1];
+  var s4 =useState('maxWeight'),metric=s4[0],  setMetric    =s4[1];
+  var s5 =useState(false), showAdd   =s5[0],  setShowAdd   =s5[1];
+  var s6 =useState(''),    addDate   =s6[0],  setAddDate   =s6[1];
+  var s7 =useState(''),    addLabel  =s7[0],  setAddLabel  =s7[1];
+  var s8 =useState(''),    addText   =s8[0],  setAddText   =s8[1];
+  var s9 =useState(''),    addDuration=s9[0], setAddDuration=s9[1];
+  var s10=useState(''),    addError  =s10[0], setAddError  =s10[1];
+  var s11=useState(false), addOk     =s11[0], setAddOk     =s11[1];
+  var skipSave=useRef(true);
 
   useEffect(function(){
     onSync('loading');
     fetchBin(person).then(function(raw){
-      var clean=cleanBin(raw), seed=person==='charlie'?CHARLIE_SEED:[];
+      var clean=cleanBin(raw),seed=person==='charlie'?CHARLIE_SEED:[];
       var data=clean.length>0?clean:seed;
       skipSave.current=true; setWorkouts(data); onSync('idle');
       if(clean.length===0&&seed.length>0) saveBin(person,seed);
@@ -352,6 +352,15 @@ function WorkoutTracker({person,onSync}) {
     });
   }
   function getDelta(name){ var h=getHist(name); return h.length<2?null:h[h.length-1].maxWeight-h[h.length-2].maxWeight; }
+  // PR: latest session has higher max than all previous sessions for this exercise
+  function isPR(name){
+    var h=getHist(name); if(h.length<2) return false;
+    var latest=h[h.length-1].maxWeight;
+    if(latest===0) return false;
+    var prevBest=Math.max.apply(null,h.slice(0,-1).map(function(x){return x.maxWeight;}));
+    return latest>prevBest;
+  }
+
   function closeAdd(){ setShowAdd(false);setAddError('');setAddOk(false); }
   function handleAdd(){
     setAddError('');setAddOk(false);
@@ -359,20 +368,23 @@ function WorkoutTracker({person,onSync}) {
     if(workouts.some(function(w){return w.date===addDate;})){ setAddError('A workout already exists for this date.'); return; }
     var exercises=parseWorkoutText(addText);
     if(!exercises.length){ setAddError('No exercises found — check the format matches your app export.'); return; }
+    var dur=addDuration?parseInt(addDuration):null;
     var nw={id:'w-'+addDate,date:addDate,label:addLabel||autoLabel(addDate),exercises:exercises};
+    if(dur&&dur>0) nw.duration=dur;
     setWorkouts(function(prev){ return prev.concat([nw]).sort(function(a,b){return a.date<b.date?-1:1;}); });
     setSessionIdx(null); setAddOk(true);
-    setTimeout(function(){ closeAdd();setAddDate('');setAddLabel('');setAddText('');setAddOk(false); },900);
+    setTimeout(function(){ closeAdd();setAddDate('');setAddLabel('');setAddDuration('');setAddText('');setAddOk(false); },900);
   }
-  var mProps={addDate:addDate,setAddDate:setAddDate,addLabel:addLabel,setAddLabel:setAddLabel,addText:addText,setAddText:setAddText,addError:addError,addOk:addOk,handleAdd:handleAdd,onClose:closeAdd};
-  var allNames=[...new Set((workouts||[]).reduce(function(acc,w){ w.exercises.forEach(function(e){acc.push(e.name);}); return acc; },[]))].sort();
 
-  // Loading
+  var allNames=[...new Set((workouts||[]).reduce(function(acc,w){ w.exercises.forEach(function(e){acc.push(e.name);}); return acc; },[]))].sort();
+  var mProps={addDate:addDate,setAddDate:setAddDate,addLabel:addLabel,setAddLabel:setAddLabel,addDuration:addDuration,setAddDuration:setAddDuration,addText:addText,setAddText:setAddText,addError:addError,addOk:addOk,handleAdd:handleAdd,onClose:closeAdd};
+
+  // Loading spinner
   if(workouts===null) return ce('div',{style:{display:'flex',alignItems:'center',justifyContent:'center',height:'60vh',color:C.muted,gap:10,fontSize:14}},
     ce('span',{style:{display:'inline-block',width:18,height:18,border:'2px solid '+C.accent,borderTopColor:'transparent',borderRadius:'50%',animation:'spin .7s linear infinite'}}),
     'Loading from cloud…');
 
-  // Exercise detail
+  // Exercise detail view
   if(selected){
     var hist=getHist(selected);
     var chartData=hist.map(function(h){return{name:h.label,value:metric==='maxWeight'?h.maxWeight:h.volume};});
@@ -420,91 +432,122 @@ function WorkoutTracker({person,onSync}) {
 
   // Dashboard
   var totalLbs=workouts.reduce(function(s,w){return s+wVol(w);},0);
+  var thisWeek=sessionsThisWeek(workouts);
   var volData=workouts.map(function(w){return{label:w.label,volume:wVol(w)};});
 
   return ce('div',{style:{padding:20}},
+    // Top stats: Sessions | This Week | Total Lifted
     ce('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-end',marginBottom:20}},
       ce('div',{style:{display:'flex',gap:20}},
-        [['Sessions',workouts.length],['Exercises',allNames.length],['Lifted',(totalLbs/1000).toFixed(1)+'k lbs']].map(function(pair){
+        [['Sessions',workouts.length],['This Week',thisWeek],['Lifted',(totalLbs/1000).toFixed(1)+'k lbs']].map(function(pair){
           return ce('div',{key:pair[0]},
             ce('div',{style:{fontSize:20,fontWeight:700}},String(pair[1])),
             ce('div',{style:{fontSize:10,color:C.muted,textTransform:'uppercase',letterSpacing:.5}},pair[0]));
         })),
       ce('button',{onClick:function(){setShowAdd(true);},style:{background:C.accent,color:'#fff',border:'none',borderRadius:10,padding:'10px 16px',cursor:'pointer',fontSize:13,fontWeight:700}},'+ Add')),
+
+    // Volume chart
     ce('div',{style:{background:C.card,borderRadius:sessionIdx!==null?'12px 12px 0 0':12,padding:'16px 8px 10px'}},
       ce('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'0 8px',marginBottom:12}},
         ce('div',{style:{fontSize:10,color:C.muted,textTransform:'uppercase',letterSpacing:1}},'Session Volume (lbs)'),
         ce('div',{style:{fontSize:11,color:sessionIdx!==null?C.teal:C.muted}},sessionIdx!==null?'Tap again to close':'Tap a bar for details')),
       ce(BarChart,{data:volData,selectedIdx:sessionIdx,onSelect:setSessionIdx})),
-    sessionIdx!==null?ce('div',{style:{background:C.card,borderRadius:'0 0 12px 12px',padding:'0 8px 12px',marginBottom:16}},ce(SessionDetail,{workout:workouts[sessionIdx]})):ce('div',{style:{marginBottom:16}}),
+
+    // Session detail
+    sessionIdx!==null
+      ?ce('div',{style:{background:C.card,borderRadius:'0 0 12px 12px',padding:'0 8px 12px',marginBottom:16}},ce(SessionDetail,{workout:workouts[sessionIdx]}))
+      :ce('div',{style:{marginBottom:16}}),
+
+    // Trend stats
     ce(TrendStats,{workouts:workouts}),
+
+    // Exercise grid label
     ce('div',{style:{fontSize:10,color:C.muted,textTransform:'uppercase',letterSpacing:1,marginBottom:10}},'Exercises — tap to view progression'),
+
+    // Exercise grid with PR badges
     ce('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,paddingBottom:20}},
       allNames.map(function(name){
-        var delta=getDelta(name), hist=getHist(name), latest=hist[hist.length-1];
-        var bCol=delta===null?C.border:delta>0?C.teal:delta<0?'#f87171':C.border;
+        var delta=getDelta(name),hist=getHist(name),latest=hist[hist.length-1],pr=isPR(name);
+        var bCol=pr?'#f59e0b':delta===null?C.border:delta>0?C.teal:delta<0?'#f87171':C.border;
         return ce('div',{key:name,className:'ex-card',onClick:function(){setSelected(name);},
-          style:{background:C.card,borderRadius:10,padding:'13px 14px',cursor:'pointer',borderLeft:'3px solid '+bCol}},
-          ce('div',{style:{fontSize:12,fontWeight:600,marginBottom:8,lineHeight:1.3}},name),
+          style:{background:C.card,borderRadius:10,padding:'13px 14px',cursor:'pointer',borderLeft:'3px solid '+bCol,position:'relative'}},
+          pr?ce('span',{style:{position:'absolute',top:8,right:10,fontSize:13}},'🏆'):null,
+          ce('div',{style:{fontSize:12,fontWeight:600,marginBottom:8,lineHeight:1.3,paddingRight:pr?20:0}},name),
           ce('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
             ce('span',{style:{fontSize:17,fontWeight:700,color:delta>0?C.teal:C.text}},latest.maxWeight>0?latest.maxWeight+' lbs':'BW'),
-            ce('span',{style:{fontSize:12,fontWeight:600,color:delta>0?C.teal:delta<0?'#f87171':C.muted}},
-              delta===null?'1 session':delta>0?'▲ '+delta:delta<0?'▼ '+Math.abs(delta):'= same')));
+            ce('span',{style:{fontSize:12,fontWeight:600,color:pr?'#f59e0b':delta>0?C.teal:delta<0?'#f87171':C.muted}},
+              pr?'NEW PR':delta===null?'1 session':delta>0?'▲ '+delta:delta<0?'▼ '+Math.abs(delta):'= same')));
       })),
+
     showAdd?ce(AddModal,mProps):null);
 }
 
 // ── App ───────────────────────────────────────────────────
 function App() {
-  var s_sync   = useState('idle'),    syncStatus = s_sync[0],  setSyncStatus = s_sync[1];
-  var s_picked = useState(function(){
+  var s1=useState('idle'),     syncStatus=s1[0],   setSyncStatus=s1[1];
+  var s2=useState(function(){
     var c=localStorage.getItem('workout-auth-charlie')==='true';
     var j=localStorage.getItem('workout-auth-john')==='true';
     return (c&&!j)?'charlie':(j&&!c)?'john':null;
-  }), picked=s_picked[0], setPicked=s_picked[1];
-  var s_tab = useState(function(){
+  }), picked=s2[0], setPicked=s2[1];
+  var s3=useState(function(){
     var c=localStorage.getItem('workout-auth-charlie')==='true';
     var j=localStorage.getItem('workout-auth-john')==='true';
     return (c&&!j)?'charlie':(j&&!c)?'john':'charlie';
-  }), tab=s_tab[0], setTab=s_tab[1];
-  var s_auth = useState(function(){
-    return {john:localStorage.getItem('workout-auth-john')==='true', charlie:localStorage.getItem('workout-auth-charlie')==='true'};
-  }), auth=s_auth[0], setAuth=s_auth[1];
-  var s_pinTarget = useState(null), pinTarget=s_pinTarget[0], setPinTarget=s_pinTarget[1];
+  }), tab=s3[0], setTab=s3[1];
+  var s4=useState(function(){
+    return {john:localStorage.getItem('workout-auth-john')==='true',charlie:localStorage.getItem('workout-auth-charlie')==='true'};
+  }), auth=s4[0], setAuth=s4[1];
+  var s5=useState(null), pinTarget=s5[0], setPinTarget=s5[1];
 
-  function pickUser(person){ setPicked(person); setTab(person); if(!auth[person]) setPinTarget(person); }
-  function switchTab(newTab){ setTab(newTab); if(!auth[newTab]) setPinTarget(newTab); }
-  function unlock(person){ setAuth(function(prev){return Object.assign({},prev,{[person]:true});}); setPinTarget(null); }
-  function lock(person){
-    localStorage.removeItem('workout-auth-'+person);
-    setAuth(function(prev){return Object.assign({},prev,{[person]:false});});
-    setPicked(null); setPinTarget(null);
+  var isLoading=syncStatus==='loading';
+
+  function pickUser(person){ setPicked(person);setTab(person);if(!auth[person]) setPinTarget(person); }
+  function switchTab(newTab){
+    if(isLoading) return;  // block tab switch while current tab is loading
+    setTab(newTab);if(!auth[newTab]) setPinTarget(newTab);
   }
+  function unlock(person){ setAuth(function(prev){return Object.assign({},prev,{[person]:true});}); setPinTarget(null); }
+  function changeUser(){ setPicked(null); setPinTarget(null); }
 
   if(picked===null) return ce(UserPicker,{onPick:pickUser});
   if(pinTarget) return ce(PinModal,{person:pinTarget,onSuccess:function(){unlock(pinTarget);},onBack:function(){setPicked(null);setPinTarget(null);}});
 
   return ce('div',{style:{background:C.bg,minHeight:'100vh',color:C.text,maxWidth:620,margin:'0 auto'}},
+    // Sticky header
     ce('div',{style:{padding:'18px 20px 0',background:'linear-gradient(160deg,#161c2d 0%,#0d1117 100%)',borderBottom:'1px solid '+C.border,position:'sticky',top:0,zIndex:10}},
       ce('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}},
         ce('h1',{style:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:26,fontWeight:800,letterSpacing:1}},
           'WORKOUT ',ce('span',{style:{color:C.accent}},'TRACKER')),
         ce('div',{style:{display:'flex',alignItems:'center',gap:10}},
           ce(SyncBadge,{status:syncStatus}),
-          ce('button',{onClick:function(){lock(tab);},style:{background:C.card2,border:'1px solid '+C.border,color:C.muted,borderRadius:8,padding:'6px 11px',cursor:'pointer',fontSize:13}},'🔒 Lock'))),
+          ce('button',{onClick:changeUser,style:{background:C.card2,border:'1px solid '+C.border,color:C.muted,borderRadius:8,padding:'6px 11px',cursor:'pointer',fontSize:12,fontWeight:600,whiteSpace:'nowrap'}},'Change User'))),
+      // Tabs — dimmed and non-clickable while loading
       ce('div',{style:{display:'flex',gap:4}},
         [['john','John'],['charlie','Charlie']].map(function(pair){
-          var id=pair[0],label=pair[1];
-          return ce('button',{key:id,onClick:function(){switchTab(id);},
-            style:{background:tab===id?C.accent:'transparent',color:tab===id?'#fff':C.muted,border:'none',borderRadius:'8px 8px 0 0',padding:'9px 22px',cursor:'pointer',fontSize:14,fontWeight:700,letterSpacing:.5,display:'flex',alignItems:'center',gap:6}},
-            label, !auth[id]?ce('span',{style:{fontSize:11}},'🔒'):null);
+          var id=pair[0],label=pair[1],isActive=tab===id;
+          return ce('button',{key:id,
+            onClick:function(){switchTab(id);},
+            disabled:isLoading&&!isActive,
+            style:{
+              background:isActive?C.accent:'transparent',
+              color:isActive?'#fff':isLoading?C.border:C.muted,
+              border:'none',borderRadius:'8px 8px 0 0',padding:'9px 22px',
+              cursor:isLoading&&!isActive?'not-allowed':'pointer',
+              fontSize:14,fontWeight:700,letterSpacing:.5,
+              display:'flex',alignItems:'center',gap:6,
+              opacity:isLoading&&!isActive?0.4:1,
+              transition:'opacity .2s'}},
+            label,
+            !auth[id]?ce('span',{style:{fontSize:11}},'🔒'):null);
         }))),
+
+    // Tab content
     auth[tab]
       ?ce(WorkoutTracker,{key:tab,person:tab,onSync:setSyncStatus})
       :ce('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'60vh',gap:12,color:C.muted}},
           ce('span',{style:{fontSize:32}},'🔒'),
-          ce('span',{style:{fontSize:14}},'Tap the tab above to unlock'))
-  );
+          ce('span',{style:{fontSize:14}},'Tap the tab above to unlock')));
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(ce(App,null));
