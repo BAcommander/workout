@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Workout Tracker</title>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0d1117; color: #e2e8f0; font-family: 'Segoe UI', system-ui, sans-serif; }
+    input, textarea, button { font-family: inherit; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-thumb { background: #2a3354; border-radius: 2px; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+const { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } = Recharts;
+
+// ── Colour tokens ──────────────────────────────────────────
+const C = {
+  bg: "#0d1117", card: "#161c2d", card2: "#1e2640",
+  accent: "#f04e37", teal: "#2dd4bf",
+  text: "#e2e8f0", muted: "#64748b", border: "#2a3354"
+};
+
+// ── Charlie's pre-loaded workouts ──────────────────────────
+const CHARLIE_INITIAL = [
+  {
+    id: "sun-apr-26", date: "2026-04-26", label: "Sun 26 Apr",
+    exercises: [
+      { name: "Lat Pulldown",       sets: [{reps:12,weight:43},{reps:12,weight:43},{reps:12,weight:43}] },
+      { name: "Inner Thigh",        sets: [{reps:12,weight:54},{reps:10,weight:54},{reps:10,weight:54}] },
+      { name: "Outer Thigh",        sets: [{reps:12,weight:61},{reps:12,weight:61},{reps:12,weight:61}] },
+      { name: "Machine Bicep Curl", sets: [{reps:12,weight:14},{reps:10,weight:16},{reps:10,weight:16}] },
+      { name: "Seated Leg Curl",    sets: [{reps:12,weight:54},{reps:10,weight:56},{reps:10,weight:56}] },
+      { name: "Chest Press",        sets: [{reps:12,weight:25},{reps:12,weight:25},{reps:10,weight:25}] },
+      { name: "Leg Extension",      sets: [{reps:12,weight:52},{reps:10,weight:52},{reps:10,weight:52}] },
+      { name: "Seated Row Machine", sets: [{reps:12,weight:32},{reps:12,weight:32},{reps:12,weight:32}] },
+      { name: "Ab Crunch Machine",  sets: [{reps:12,weight:23},{reps:12,weight:23},{reps:12,weight:23}] },
+      { name: "Cable Rear Delt Fly",sets: [{reps:12,weight:15},{reps:12,weight:15},{reps:12,weight:15}] },
+      { name: "Rear Bicep Curl",    sets: [{reps:12,weight:15},{reps:12,weight:20},{reps:12,weight:15}] },
+      { name: "Shoulder Press",     sets: [{reps:11,weight:27},{reps:8, weight:27},{reps:10,weight:27}] },
+    ]
+  },
+  {
+    id: "tue-apr-28", date: "2026-04-28", label: "Tue 28 Apr",
+    exercises: [
+      { name: "Machine Bicep Curl",   sets: [{reps:12,weight:18},{reps:12,weight:18},{reps:10,weight:18}] },
+      { name: "Seated Leg Curl",      sets: [{reps:12,weight:56},{reps:12,weight:56},{reps:10,weight:56}] },
+      { name: "Seated Row Machine",   sets: [{reps:12,weight:34},{reps:12,weight:34},{reps:12,weight:34}] },
+      { name: "Chest Press",          sets: [{reps:12,weight:25},{reps:12,weight:25},{reps:12,weight:25}] },
+      { name: "Shoulder Press",       sets: [{reps:10,weight:27},{reps:10,weight:27},{reps:10,weight:27}] },
+      { name: "Triceps Extension",    sets: [{reps:12,weight:21},{reps:12,weight:23},{reps:12,weight:23}] },
+      { name: "Band Assisted Pull-Up",sets: [{reps:10,weight:0}, {reps:10,weight:0}, {reps:10,weight:0}] },
+      { name: "Leg Extension",        sets: [{reps:12,weight:52},{reps:12,weight:52},{reps:12,weight:52}] },
+      { name: "Lat Pulldown",         sets: [{reps:12,weight:43},{reps:12,weight:43},{reps:12,weight:43}] },
+      { name: "Outer Thigh",          sets: [{reps:12,weight:61},{reps:12,weight:61},{reps:12,weight:61}] },
+      { name: "Inner Thigh",          sets: [{reps:12,weight:54},{reps:12,weight:54},{reps:12,weight:54}] },
+      { name: "Ab Crunch Machine",    sets: [{reps:12,weight:25},{reps:12,weight:25},{reps:12,weight:25}] },
+      { name: "Cable Rear Delt Fly",  sets: [{reps:12,weight:15},{reps:12,weight:20},{reps:10,weight:20}] },
+      { name: "Reverse Cable Curl",   sets: [{reps:12,weight:15},{reps:10,weight:20},{reps:8, weight:20}] },
+    ]
+  }
+];
+
+// ── Helpers ────────────────────────────────────────────────
+const wVol  = (w)  => w.exercises.reduce((s, ex) => s + ex.sets.reduce((s2, set) => s2 + set.reps * set.weight, 0), 0);
+const exMax = (ex) => { const ws = ex.sets.map(s => s.weight).filter(w => w > 0); return ws.length ? Math.max(...ws) : 0; };
+const exVol = (ex) => ex.sets.reduce((s, set) => s + set.reps * set.weight, 0);
+
+function autoLabel(dateStr) {
+  const d = new Date(dateStr + "T12:00:00");
+  return `${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()]} ${d.getDate()} ${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()]}`;
+}
+
+function parseWorkoutText(text) {
+  const exercises = [];
+  const blocks = text.split(/Exercise:\s*Optional\s*\(\s*"/);
+  for (let i = 1; i < blocks.length; i++) {
+    const block = blocks[i];
+    const nameEnd = block.indexOf('"');
+    if (nameEnd === -1) continue;
+    const name = block.substring(0, nameEnd).trim();
+    const sets = [];
+    for (const m of block.matchAll(/- (\d+)\s+reps\s+x\s+([\d.]+)/g))
+      sets.push({ reps: parseInt(m[1]), weight: parseFloat(m[2]) });
+    if (sets.length && name) exercises.push({ name, sets });
+  }
+  return exercises;
+}
+
+const inputSt = {
+  width: "100%", background: C.card2, border: `1px solid ${C.border}`,
+  borderRadius: 8, padding: "10px 12px", color: C.text, fontSize: 14
+};
+
+// ── Add Workout Modal ──────────────────────────────────────
+function AddModal({ addDate, setAddDate, addLabel, setAddLabel, addText, setAddText, addError, addOk, handleAdd, onClose }) {
+  return (
+    <div onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "flex-end", zIndex: 100 }}>
+      <div style={{ background: C.card, borderRadius: "20px 20px 0 0", width: "100%", padding: 24, maxHeight: "85vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Add Workout</h3>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 22, lineHeight: 1 }}>✕</button>
+        </div>
+
+        <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Date</label>
+        <input type="date" value={addDate} onChange={e => setAddDate(e.target.value)} style={{ ...inputSt, marginBottom: 14 }} />
+
+        <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Label (optional)</label>
+        <input type="text" value={addLabel} onChange={e => setAddLabel(e.target.value)} placeholder="Auto-generated if blank" style={{ ...inputSt, marginBottom: 14 }} />
+
+        <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Paste workout export</label>
+        <textarea value={addText} onChange={e => setAddText(e.target.value)} placeholder="Paste the workout text from your app here…"
+          style={{ ...inputSt, height: 150, resize: "vertical", fontFamily: "monospace", fontSize: 12, marginBottom: 20 }} />
+
+        {addError && <div style={{ color: "#f87171", fontSize: 13, marginBottom: 12 }}>{addError}</div>}
+        {addOk    && <div style={{ color: C.teal,  fontSize: 13, marginBottom: 12, fontWeight: 600 }}>✓ Workout saved!</div>}
+
+        <button onClick={handleAdd}
+          style={{ width: "100%", background: C.accent, color: "#fff", border: "none", borderRadius: 10, padding: 14, fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+          Parse & Save Workout
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── WorkoutTracker ─────────────────────────────────────────
+function WorkoutTracker({ person }) {
+  const KEY = `workout-tracker-v1-${person}`;
+  const initial = person === "charlie" ? CHARLIE_INITIAL : [];
+
+  const [workouts, setWorkouts] = useState(() => {
+    try { const s = localStorage.getItem(KEY); return s ? JSON.parse(s) : initial; }
+    catch { return initial; }
+  });
+  const [selected, setSelected] = useState(null);
+  const [metric,   setMetric]   = useState("maxWeight");
+  const [showAdd,  setShowAdd]  = useState(false);
+  const [addDate,  setAddDate]  = useState("");
+  const [addLabel, setAddLabel] = useState("");
+  const [addText,  setAddText]  = useState("");
+  const [addError, setAddError] = useState("");
+  const [addOk,    setAddOk]    = useState(false);
+
+  useEffect(() => {
+    try { localStorage.setItem(KEY, JSON.stringify(workouts)); } catch {}
+  }, [workouts]);
+
+  const allNames = [...new Set(workouts.flatMap(w => w.exercises.map(e => e.name)))].sort();
+
+  const getHist = name => workouts
+    .filter(w => w.exercises.some(e => e.name === name))
+    .map(w => { const ex = w.exercises.find(e => e.name === name); return { label: w.label, maxWeight: exMax(ex), volume: exVol(ex), sets: ex.sets }; });
+
+  const getDelta = name => {
+    const h = getHist(name);
+    return h.length < 2 ? null : h[h.length-1].maxWeight - h[h.length-2].maxWeight;
+  };
+
+  const closeAdd = () => { setShowAdd(false); setAddError(""); setAddOk(false); };
+
+  const handleAdd = () => {
+    setAddError(""); setAddOk(false);
+    if (!addDate || !addText.trim()) { setAddError("Date and workout text are required."); return; }
+    if (workouts.some(w => w.date === addDate)) { setAddError("A workout already exists for this date."); return; }
+    const exercises = parseWorkoutText(addText);
+    if (!exercises.length) { setAddError("No exercises found — check the format matches your app export."); return; }
+    const nw = { id: `w-${addDate}`, date: addDate, label: addLabel || autoLabel(addDate), exercises };
+    setWorkouts(prev => [...prev, nw].sort((a, b) => a.date.localeCompare(b.date)));
+    setAddOk(true);
+    setTimeout(() => { closeAdd(); setAddDate(""); setAddLabel(""); setAddText(""); setAddOk(false); }, 800);
+  };
+
+  const modalProps = { addDate, setAddDate, addLabel, setAddLabel, addText, setAddText, addError, addOk, handleAdd, onClose: closeAdd };
+
+  // ── Empty state ──
+  if (!workouts.length) return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "60vh", gap: 16, color: C.muted, padding: 20, textAlign: "center" }}>
+      <div style={{ fontSize: 52 }}>🏋️</div>
+      <div style={{ fontSize: 20, fontWeight: 700, color: C.text }}>No workouts yet</div>
+      <div style={{ fontSize: 14, maxWidth: 260 }}>Add your first session to start tracking progressive overload</div>
+      <button onClick={() => setShowAdd(true)}
+        style={{ background: C.accent, color: "#fff", border: "none", borderRadius: 10, padding: "12px 24px", cursor: "pointer", fontSize: 14, fontWeight: 700, marginTop: 8 }}>
+        + Add First Workout
+      </button>
+      {showAdd && <AddModal {...modalProps} />}
+    </div>
+  );
+
+  // ── Exercise detail ──
+  if (selected) {
+    const hist = getHist(selected);
+    const chartData = hist.map(h => ({ name: h.label, value: metric === "maxWeight" ? h.maxWeight : h.volume }));
+    const best = Math.max(...hist.map(h => h.maxWeight));
+    const totalReps = hist.reduce((s, h) => s + h.sets.reduce((s2, set) => s2 + set.reps, 0), 0);
+    return (
+      <div style={{ padding: 20 }}>
+        <button onClick={() => setSelected(null)}
+          style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 14, marginBottom: 18, padding: 0 }}>← Back</button>
+        <h2 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 26, fontWeight: 800, marginBottom: 2 }}>{selected}</h2>
+        <p style={{ color: C.muted, fontSize: 13, marginBottom: 20 }}>{hist.length} session{hist.length !== 1 ? "s" : ""} logged</p>
+
+        <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
+          {[["Best", best > 0 ? `${best} lbs` : "BW"], ["Sessions", hist.length], ["Total Reps", totalReps]].map(([k, v]) => (
+            <div key={k} style={{ flex: 1, background: C.card, borderRadius: 10, padding: "12px 14px" }}>
+              <div style={{ color: C.muted, fontSize: 10, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>{k}</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: C.accent }}>{v}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ background: C.card, borderRadius: 12, padding: "16px 8px 12px", marginBottom: 20 }}>
+          <div style={{ display: "flex", gap: 8, paddingLeft: 8, marginBottom: 14 }}>
+            {["maxWeight","volume"].map(m => (
+              <button key={m} onClick={() => setMetric(m)}
+                style={{ background: metric===m ? C.accent : C.card2, color: metric===m ? "#fff" : C.muted, border: "none", borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
+                {m === "maxWeight" ? "Max Weight" : "Volume"}
+              </button>
+            ))}
+          </div>
+          {hist.length >= 2 ? (
+            <ResponsiveContainer width="100%" height={180}>
+              <LineChart data={chartData} margin={{ top: 4, right: 16, bottom: 0, left: -16 }}>
+                <XAxis dataKey="name" tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: C.muted, fontSize: 10 }} axisLine={false} tickLine={false} />
+                <Tooltip contentStyle={{ background: C.card2, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontSize: 12 }} />
+                <Line type="monotone" dataKey="value" stroke={C.accent} strokeWidth={2.5} dot={{ fill: C.accent, r: 5, strokeWidth: 0 }} activeDot={{ r: 6 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{ textAlign: "center", padding: "36px 0", color: C.muted, fontSize: 13 }}>Add more workouts to see a trend line</div>
+          )}
+        </div>
+
+        <div style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Session History</div>
+        {[...hist].reverse().map((h, i) => (
+          <div key={i} style={{ background: C.card, borderRadius: 10, padding: "14px 16px", marginBottom: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+              <span style={{ fontWeight: 600, fontSize: 14 }}>{h.label}</span>
+              <span style={{ color: C.accent, fontWeight: 700, fontSize: 14 }}>{h.maxWeight > 0 ? `${h.maxWeight} lbs` : "Bodyweight"}</span>
+            </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {h.sets.map((s, si) => (
+                <span key={si} style={{ background: C.card2, borderRadius: 6, padding: "4px 10px", fontSize: 12, color: C.muted }}>
+                  {s.reps}×{s.weight > 0 ? s.weight : "BW"}
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // ── Dashboard ──
+  const totalLbs = workouts.reduce((s, w) => s + wVol(w), 0);
+  const volData  = workouts.map(w => ({ label: w.label, volume: wVol(w) }));
+
+  return (
+    <div style={{ padding: 20 }}>
+      {/* Stats + Add button */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 20 }}>
+        <div style={{ display: "flex", gap: 20 }}>
+          {[["Sessions", workouts.length], ["Exercises", allNames.length], ["Lifted", `${(totalLbs/1000).toFixed(1)}k lbs`]].map(([k,v]) => (
+            <div key={k}>
+              <div style={{ fontSize: 20, fontWeight: 700 }}>{v}</div>
+              <div style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: 0.5 }}>{k}</div>
+            </div>
+          ))}
+        </div>
+        <button onClick={() => setShowAdd(true)}
+          style={{ background: C.accent, color: "#fff", border: "none", borderRadius: 10, padding: "10px 16px", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
+          + Add
+        </button>
+      </div>
+
+      {/* Volume chart */}
+      <div style={{ background: C.card, borderRadius: 12, padding: "16px 8px 10px", marginBottom: 24 }}>
+        <div style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: 1, paddingLeft: 8, marginBottom: 12 }}>Session Volume (lbs)</div>
+        <ResponsiveContainer width="100%" height={110}>
+          <BarChart data={volData} margin={{ top: 4, right: 12, bottom: 0, left: -20 }}>
+            <XAxis dataKey="label" tick={{ fill: C.muted, fontSize: 11 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fill: C.muted, fontSize: 10 }} axisLine={false} tickLine={false} />
+            <Tooltip contentStyle={{ background: C.card2, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, fontSize: 12 }}
+              formatter={v => [`${v.toLocaleString()} lbs`, "Volume"]} />
+            <Bar dataKey="volume" fill={C.accent} radius={[4,4,0,0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Exercise grid */}
+      <div style={{ fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>Exercises — tap to view progression</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, paddingBottom: 20 }}>
+        {allNames.map(name => {
+          const delta  = getDelta(name);
+          const hist   = getHist(name);
+          const latest = hist[hist.length - 1];
+          const bCol   = delta === null ? C.border : delta > 0 ? C.teal : delta < 0 ? "#f87171" : C.border;
+          return (
+            <div key={name} onClick={() => setSelected(name)}
+              style={{ background: C.card, borderRadius: 10, padding: "13px 14px", cursor: "pointer", borderLeft: `3px solid ${bCol}` }}>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, lineHeight: 1.3 }}>{name}</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 17, fontWeight: 700, color: delta > 0 ? C.teal : C.text }}>
+                  {latest.maxWeight > 0 ? `${latest.maxWeight} lbs` : "BW"}
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: delta > 0 ? C.teal : delta < 0 ? "#f87171" : C.muted }}>
+                  {delta === null ? "1 session" : delta > 0 ? `▲ ${delta}` : delta < 0 ? `▼ ${Math.abs(delta)}` : "= same"}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {showAdd && <AddModal {...modalProps} />}
+    </div>
+  );
+}
+
+// ── App shell (tab switcher) ───────────────────────────────
+function App() {
+  const [tab, setTab] = useState("charlie");
+  return (
+    <div style={{ background: C.bg, minHeight: "100vh", color: C.text, maxWidth: 620, margin: "0 auto" }}>
+      {/* Header */}
+      <div style={{ padding: "20px 20px 0", background: "linear-gradient(160deg, #161c2d 0%, #0d1117 100%)", borderBottom: `1px solid ${C.border}`, position: "sticky", top: 0, zIndex: 10 }}>
+        <h1 style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 28, fontWeight: 800, letterSpacing: 1, marginBottom: 14 }}>
+          WORKOUT <span style={{ color: C.accent }}>TRACKER</span>
+        </h1>
+        <div style={{ display: "flex", gap: 4 }}>
+          {[["john","John"],["charlie","Charlie"]].map(([id, label]) => (
+            <button key={id} onClick={() => setTab(id)}
+              style={{ background: tab===id ? C.accent : "transparent", color: tab===id ? "#fff" : C.muted,
+                border: "none", borderRadius: "8px 8px 0 0", padding: "9px 24px",
+                cursor: "pointer", fontSize: 14, fontWeight: 700, letterSpacing: 0.5 }}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Tab content — key forces fresh mount on switch */}
+      <WorkoutTracker key={tab} person={tab} />
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
