@@ -10,11 +10,13 @@
     body { background: #0d1117; color: #e2e8f0; font-family: 'Segoe UI', system-ui, sans-serif; }
     input, textarea, button { font-family: inherit; }
     #root { min-height: 100vh; }
-    .ex-card:hover { filter: brightness(1.12); }
+    .ex-card:hover  { filter: brightness(1.12); }
+    .pick-card:hover { border-color: #f04e37 !important; transform: translateY(-2px); }
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-thumb { background: #2a3354; border-radius: 2px; }
-    @keyframes spin    { to { transform: rotate(360deg); } }
-    @keyframes fadeIn  { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes spin   { to { transform: rotate(360deg); } }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes slideDown { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
   </style>
 </head>
 <body>
@@ -25,15 +27,10 @@ import { useState, useEffect, useRef } from 'https://esm.sh/preact@10/hooks';
 import htm from 'https://esm.sh/htm@3';
 const html = htm.bind(h);
 
-// ── CONFIG ────────────────────────────────────────────────
-// Change these PINs before pushing to GitHub!
+// ── CONFIG — change PINs before pushing! ──────────────────
 const PINS = { john: "1234", charlie: "5678" };
-
 const API_KEY = "$2a$10$wcs2g43ed8qnSp0RIBmo9uG6fN6O5AtF7l/rqDbh22O0WOiH6p6OW";
-const BINS    = {
-  john:    "69f0b07baaba882197494ea1",
-  charlie: "69f0b0ac856a6821898145b3"
-};
+const BINS    = { john: "69f0b07baaba882197494ea1", charlie: "69f0b0ac856a6821898145b3" };
 
 // ── Colours ───────────────────────────────────────────────
 const C = {
@@ -44,55 +41,49 @@ const C = {
 
 // ── Charlie's seed data ───────────────────────────────────
 const CHARLIE_SEED = [
-  {
-    id:"sun-apr-26", date:"2026-04-26", label:"Sun 26 Apr",
-    exercises:[
-      {name:"Lat Pulldown",        sets:[{reps:12,weight:43},{reps:12,weight:43},{reps:12,weight:43}]},
-      {name:"Inner Thigh",         sets:[{reps:12,weight:54},{reps:10,weight:54},{reps:10,weight:54}]},
-      {name:"Outer Thigh",         sets:[{reps:12,weight:61},{reps:12,weight:61},{reps:12,weight:61}]},
-      {name:"Machine Bicep Curl",  sets:[{reps:12,weight:14},{reps:10,weight:16},{reps:10,weight:16}]},
-      {name:"Seated Leg Curl",     sets:[{reps:12,weight:54},{reps:10,weight:56},{reps:10,weight:56}]},
-      {name:"Chest Press",         sets:[{reps:12,weight:25},{reps:12,weight:25},{reps:10,weight:25}]},
-      {name:"Leg Extension",       sets:[{reps:12,weight:52},{reps:10,weight:52},{reps:10,weight:52}]},
-      {name:"Seated Row Machine",  sets:[{reps:12,weight:32},{reps:12,weight:32},{reps:12,weight:32}]},
-      {name:"Ab Crunch Machine",   sets:[{reps:12,weight:23},{reps:12,weight:23},{reps:12,weight:23}]},
-      {name:"Cable Rear Delt Fly", sets:[{reps:12,weight:15},{reps:12,weight:15},{reps:12,weight:15}]},
-      {name:"Rear Bicep Curl",     sets:[{reps:12,weight:15},{reps:12,weight:20},{reps:12,weight:15}]},
-      {name:"Shoulder Press",      sets:[{reps:11,weight:27},{reps:8, weight:27},{reps:10,weight:27}]},
-    ]
-  },
-  {
-    id:"tue-apr-28", date:"2026-04-28", label:"Tue 28 Apr",
-    exercises:[
-      {name:"Machine Bicep Curl",    sets:[{reps:12,weight:18},{reps:12,weight:18},{reps:10,weight:18}]},
-      {name:"Seated Leg Curl",       sets:[{reps:12,weight:56},{reps:12,weight:56},{reps:10,weight:56}]},
-      {name:"Seated Row Machine",    sets:[{reps:12,weight:34},{reps:12,weight:34},{reps:12,weight:34}]},
-      {name:"Chest Press",           sets:[{reps:12,weight:25},{reps:12,weight:25},{reps:12,weight:25}]},
-      {name:"Shoulder Press",        sets:[{reps:10,weight:27},{reps:10,weight:27},{reps:10,weight:27}]},
-      {name:"Triceps Extension",     sets:[{reps:12,weight:21},{reps:12,weight:23},{reps:12,weight:23}]},
-      {name:"Band Assisted Pull-Up", sets:[{reps:10,weight:0}, {reps:10,weight:0}, {reps:10,weight:0}]},
-      {name:"Leg Extension",         sets:[{reps:12,weight:52},{reps:12,weight:52},{reps:12,weight:52}]},
-      {name:"Lat Pulldown",          sets:[{reps:12,weight:43},{reps:12,weight:43},{reps:12,weight:43}]},
-      {name:"Outer Thigh",           sets:[{reps:12,weight:61},{reps:12,weight:61},{reps:12,weight:61}]},
-      {name:"Inner Thigh",           sets:[{reps:12,weight:54},{reps:12,weight:54},{reps:12,weight:54}]},
-      {name:"Ab Crunch Machine",     sets:[{reps:12,weight:25},{reps:12,weight:25},{reps:12,weight:25}]},
-      {name:"Cable Rear Delt Fly",   sets:[{reps:12,weight:15},{reps:12,weight:20},{reps:10,weight:20}]},
-      {name:"Reverse Cable Curl",    sets:[{reps:12,weight:15},{reps:10,weight:20},{reps:8, weight:20}]},
-    ]
-  }
+  { id:"sun-apr-26", date:"2026-04-26", label:"Sun 26 Apr", exercises:[
+    {name:"Lat Pulldown",        sets:[{reps:12,weight:43},{reps:12,weight:43},{reps:12,weight:43}]},
+    {name:"Inner Thigh",         sets:[{reps:12,weight:54},{reps:10,weight:54},{reps:10,weight:54}]},
+    {name:"Outer Thigh",         sets:[{reps:12,weight:61},{reps:12,weight:61},{reps:12,weight:61}]},
+    {name:"Machine Bicep Curl",  sets:[{reps:12,weight:14},{reps:10,weight:16},{reps:10,weight:16}]},
+    {name:"Seated Leg Curl",     sets:[{reps:12,weight:54},{reps:10,weight:56},{reps:10,weight:56}]},
+    {name:"Chest Press",         sets:[{reps:12,weight:25},{reps:12,weight:25},{reps:10,weight:25}]},
+    {name:"Leg Extension",       sets:[{reps:12,weight:52},{reps:10,weight:52},{reps:10,weight:52}]},
+    {name:"Seated Row Machine",  sets:[{reps:12,weight:32},{reps:12,weight:32},{reps:12,weight:32}]},
+    {name:"Ab Crunch Machine",   sets:[{reps:12,weight:23},{reps:12,weight:23},{reps:12,weight:23}]},
+    {name:"Cable Rear Delt Fly", sets:[{reps:12,weight:15},{reps:12,weight:15},{reps:12,weight:15}]},
+    {name:"Rear Bicep Curl",     sets:[{reps:12,weight:15},{reps:12,weight:20},{reps:12,weight:15}]},
+    {name:"Shoulder Press",      sets:[{reps:11,weight:27},{reps:8, weight:27},{reps:10,weight:27}]},
+  ]},
+  { id:"tue-apr-28", date:"2026-04-28", label:"Tue 28 Apr", exercises:[
+    {name:"Machine Bicep Curl",    sets:[{reps:12,weight:18},{reps:12,weight:18},{reps:10,weight:18}]},
+    {name:"Seated Leg Curl",       sets:[{reps:12,weight:56},{reps:12,weight:56},{reps:10,weight:56}]},
+    {name:"Seated Row Machine",    sets:[{reps:12,weight:34},{reps:12,weight:34},{reps:12,weight:34}]},
+    {name:"Chest Press",           sets:[{reps:12,weight:25},{reps:12,weight:25},{reps:12,weight:25}]},
+    {name:"Shoulder Press",        sets:[{reps:10,weight:27},{reps:10,weight:27},{reps:10,weight:27}]},
+    {name:"Triceps Extension",     sets:[{reps:12,weight:21},{reps:12,weight:23},{reps:12,weight:23}]},
+    {name:"Band Assisted Pull-Up", sets:[{reps:10,weight:0}, {reps:10,weight:0}, {reps:10,weight:0}]},
+    {name:"Leg Extension",         sets:[{reps:12,weight:52},{reps:12,weight:52},{reps:12,weight:52}]},
+    {name:"Lat Pulldown",          sets:[{reps:12,weight:43},{reps:12,weight:43},{reps:12,weight:43}]},
+    {name:"Outer Thigh",           sets:[{reps:12,weight:61},{reps:12,weight:61},{reps:12,weight:61}]},
+    {name:"Inner Thigh",           sets:[{reps:12,weight:54},{reps:12,weight:54},{reps:12,weight:54}]},
+    {name:"Ab Crunch Machine",     sets:[{reps:12,weight:25},{reps:12,weight:25},{reps:12,weight:25}]},
+    {name:"Cable Rear Delt Fly",   sets:[{reps:12,weight:15},{reps:12,weight:20},{reps:10,weight:20}]},
+    {name:"Reverse Cable Curl",    sets:[{reps:12,weight:15},{reps:10,weight:20},{reps:8, weight:20}]},
+  ]},
 ];
 
 // ── Helpers ───────────────────────────────────────────────
 const wVol    = w  => w.exercises.reduce((s,ex)=>s+ex.sets.reduce((s2,set)=>s2+set.reps*set.weight,0),0);
 const exMax   = ex => { const ws=ex.sets.map(s=>s.weight).filter(w=>w>0); return ws.length?Math.max(...ws):0; };
 const exVol   = ex => ex.sets.reduce((s,set)=>s+set.reps*set.weight,0);
+const wSets   = w  => w.exercises.reduce((s,ex)=>s+ex.sets.length,0);
 const cleanBin= raw=> Array.isArray(raw)?raw.filter(x=>x&&typeof x==="object"&&x.date&&Array.isArray(x.exercises)):[];
 
 function autoLabel(ds) {
-  const d = new Date(ds+"T12:00:00");
+  const d=new Date(ds+"T12:00:00");
   return `${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()]} ${d.getDate()} ${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()]}`;
 }
-
 function parseWorkoutText(text) {
   const exercises=[], blocks=text.split(/Exercise:\s*Optional\s*\(\s*"/);
   for(let i=1;i<blocks.length;i++){
@@ -108,38 +99,216 @@ function parseWorkoutText(text) {
 
 // ── JSONBin ───────────────────────────────────────────────
 const binUrl = p=>`https://api.jsonbin.io/v3/b/${BINS[p]}`;
-const bHdrs  = {'X-Access-Key': API_KEY};
-
-async function fetchBin(p) {
-  const r = await fetch(binUrl(p), {headers: bHdrs});
-  if (!r.ok) throw new Error();
+const bHdrs  = {'X-Access-Key':API_KEY};
+async function fetchBin(p){
+  const r=await fetch(binUrl(p),{headers:bHdrs});
+  if(!r.ok) throw new Error();
   return (await r.json()).record;
 }
-async function saveBin(p, data) {
-  const r = await fetch(binUrl(p), {method:'PUT', headers:{...bHdrs,'Content-Type':'application/json'}, body:JSON.stringify(data)});
-  if (!r.ok) throw new Error();
+async function saveBin(p,data){
+  const r=await fetch(binUrl(p),{method:'PUT',headers:{...bHdrs,'Content-Type':'application/json'},body:JSON.stringify(data)});
+  if(!r.ok) throw new Error();
 }
 
-// ── Charts ────────────────────────────────────────────────
-function BarChart({data}) {
+// ── User Picker ───────────────────────────────────────────
+function UserPicker({onPick}) {
+  return html`
+    <div style="position:fixed;inset:0;background:${C.bg};display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:200;padding:24px">
+      <div style="font-size:40px;margin-bottom:16px">🏋️</div>
+      <h1 style="font-family:'Barlow Condensed',sans-serif;font-size:34px;font-weight:800;letter-spacing:1px;margin-bottom:6px;text-align:center">
+        WORKOUT <span style="color:${C.accent}">TRACKER</span>
+      </h1>
+      <p style="color:${C.muted};font-size:15px;margin-bottom:40px">Who's training today?</p>
+      <div style="display:flex;flex-direction:column;gap:14px;width:100%;max-width:300px">
+        ${[["john","John","💪","Lift heavy, lift often"],["charlie","Charlie","🌟","Progressive overload queen"]].map(([id,name,emoji,sub])=>html`
+          <button key=${id} class="pick-card" onClick=${()=>onPick(id)}
+            style="background:${C.card};border:2px solid ${C.border};border-radius:16px;padding:20px 22px;cursor:pointer;display:flex;align-items:center;gap:16px;width:100%;text-align:left;transition:transform .15s,border-color .15s">
+            <span style="font-size:34px">${emoji}</span>
+            <div style="flex:1">
+              <div style="font-family:'Barlow Condensed',sans-serif;font-size:24px;font-weight:800;color:${C.text};letter-spacing:.5px">${name}</div>
+              <div style="font-size:12px;color:${C.muted};margin-top:2px">${sub}</div>
+            </div>
+            <span style="color:${C.accent};font-size:20px;font-weight:700">→</span>
+          </button>`)}
+      </div>
+    </div>`;
+}
+
+// ── PIN Screen ────────────────────────────────────────────
+function PinModal({person, onSuccess, onBack}) {
+  const [pin,setPin]       = useState("");
+  const [error,setError]   = useState("");
+  const [remember,setRemember] = useState(true);
+  const ref = useRef(null);
+  useEffect(()=>{ setTimeout(()=>ref.current?.focus(),120); },[]);
+  const submit = () => {
+    if(pin===PINS[person]){
+      if(remember) localStorage.setItem(`workout-auth-${person}`,"true");
+      onSuccess();
+    } else { setError("Wrong PIN — try again"); setPin(""); ref.current?.focus(); }
+  };
+  return html`
+    <div style="position:fixed;inset:0;background:${C.bg};display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:200;padding:24px">
+      <button onClick=${onBack} style="position:absolute;top:20px;left:20px;background:none;border:none;color:${C.muted};cursor:pointer;font-size:14px;display:flex;align-items:center;gap:4px">
+        ← Back
+      </button>
+      <div style="background:${C.card};border-radius:20px;padding:36px 28px;width:100%;max-width:320px;animation:fadeIn .25s ease;text-align:center">
+        <div style="width:54px;height:54px;background:${C.accent}22;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 18px;font-size:24px">🔒</div>
+        <h2 style="font-family:'Barlow Condensed',sans-serif;font-size:26px;font-weight:800;margin-bottom:6px">
+          ${person==="john"?"John":"Charlie"}'s <span style="color:${C.accent}">Workouts</span>
+        </h2>
+        <p style="color:${C.muted};font-size:13px;margin-bottom:26px">Enter your PIN to continue</p>
+        <input ref=${ref} type="password" inputmode="numeric" maxlength="8" value=${pin}
+          onInput=${e=>{setPin(e.target.value);setError("");}}
+          onKeyDown=${e=>{if(e.key==="Enter")submit();}}
+          placeholder="••••"
+          style="width:100%;background:${C.card2};border:2px solid ${error?"#f87171":C.border};border-radius:10px;padding:14px;color:${C.text};font-size:22px;text-align:center;letter-spacing:8px;margin-bottom:${error?"8px":"18px"};outline:none"/>
+        ${error&&html`<div style="color:#f87171;font-size:13px;margin-bottom:14px">${error}</div>`}
+        <label style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:20px;cursor:pointer;color:${C.muted};font-size:13px">
+          <input type="checkbox" checked=${remember} onChange=${e=>setRemember(e.target.checked)}
+            style="width:16px;height:16px;accent-color:${C.accent};cursor:pointer"/>
+          Remember me on this device
+        </label>
+        <button onClick=${submit}
+          style="width:100%;background:${C.accent};color:#fff;border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:700;cursor:pointer">
+          Unlock
+        </button>
+      </div>
+    </div>`;
+}
+
+// ── Sync Badge ────────────────────────────────────────────
+function SyncBadge({status}) {
+  const cfg={loading:[C.muted,"Loading…"],saving:[C.muted,"Saving…"],saved:[C.teal,"✓ Synced"],error:["#f87171","⚠ Offline"]};
+  const [col,label]=cfg[status]||[null,null];
+  if(!label) return null;
+  const spin=status==="loading"||status==="saving";
+  return html`<span style="font-size:11px;color:${col};display:flex;align-items:center;gap:5px">
+    ${spin&&html`<span style="display:inline-block;width:10px;height:10px;border:1.5px solid ${col};border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite"/>`}
+    ${label}
+  </span>`;
+}
+
+// ── Bar Chart (tappable) ──────────────────────────────────
+function BarChart({data, selectedIdx, onSelect}) {
   if(!data.length) return null;
   const max=Math.max(...data.map(d=>d.volume),1);
-  const vW=420,H=110,pL=48,pB=22,pT=10,pR=8,plotW=vW-pL-pR,plotH=H-pB-pT;
-  const step=plotW/data.length,barW=Math.min(38,step*0.55);
+  const vW=420,H=120,pL=48,pB=22,pT=12,pR=8,plotW=vW-pL-pR,plotH=H-pB-pT;
+  const step=plotW/data.length,barW=Math.min(44,step*0.6);
   return html`<svg viewBox="0 0 ${vW} ${H}" style="width:100%;height:${H}px">
     ${[0,Math.round(max*.5),max].map(v=>{const y=pT+plotH-(v/max)*plotH;return html`
       <line key=${"l"+v} x1=${pL} y1=${y} x2=${vW-pR} y2=${y} stroke=${C.border} stroke-width="0.5"/>
       <text key=${"t"+v} x=${pL-5} y=${y+4} text-anchor="end" fill=${C.muted} font-size="9">${v>999?Math.round(v/1000)+"k":v}</text>`;
     })}
-    ${data.map((d,i)=>{const x=pL+i*step+step/2-barW/2,bH=(d.volume/max)*plotH,y=pT+plotH-bH;return html`
-      <rect key=${i} x=${x} y=${y} width=${barW} height=${bH} fill=${C.accent} rx="3">
-        <title>${d.label}: ${d.volume.toLocaleString()} lbs</title></rect>
-      <text key=${"lb"+i} x=${x+barW/2} y=${H-4} text-anchor="middle" fill=${C.muted} font-size="10">${d.label}</text>`;
+    ${data.map((d,i)=>{
+      const x=pL+i*step+step/2-barW/2, bH=Math.max((d.volume/max)*plotH,2), y=pT+plotH-bH;
+      const sel=selectedIdx===i;
+      return html`
+        <g key=${i} style="cursor:pointer" onClick=${()=>onSelect(sel?null:i)}>
+          <rect x=${x} y=${y} width=${barW} height=${bH}
+            fill=${sel?C.teal:C.accent} rx="4" opacity=${selectedIdx!==null&&!sel?0.45:1}/>
+          ${sel&&html`<rect x=${x-2} y=${y-2} width=${barW+4} height=${bH+2} fill="none" stroke=${C.teal} stroke-width="1.5" rx="5" opacity="0.6"/>`}
+          <text x=${x+barW/2} y=${H-4} text-anchor="middle"
+            fill=${sel?C.teal:C.muted} font-size="10" font-weight=${sel?"700":"400"}>
+            ${d.label}
+          </text>
+        </g>`;
     })}
   </svg>`;
 }
 
-function LineChart({data}) {
+// ── Session Detail Panel ──────────────────────────────────
+function SessionDetail({workout, onClose}) {
+  const total=wVol(workout), sets=wSets(workout);
+  return html`
+    <div style="background:${C.card2};border:1px solid ${C.teal}44;border-radius:12px;padding:16px;margin-top:10px;animation:slideDown .2s ease">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
+        <div>
+          <div style="font-weight:700;font-size:15px;color:${C.teal}">${workout.label}</div>
+          <div style="font-size:12px;color:${C.muted};margin-top:3px">${workout.exercises.length} exercises · ${sets} total sets</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:20px;font-weight:700;color:${C.accent}">${total.toLocaleString()}</div>
+          <div style="font-size:10px;color:${C.muted}">lbs lifted</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:0">
+        ${workout.exercises.map((ex,i)=>html`
+          <div key=${i} style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-top:1px solid ${C.border}">
+            <span style="font-size:12px;color:${C.text};flex:1">${ex.name}</span>
+            <div style="display:flex;gap:14px;align-items:center">
+              <span style="font-size:11px;color:${C.muted}">${ex.sets.length} sets</span>
+              <span style="font-size:12px;font-weight:700;color:${C.teal};min-width:52px;text-align:right">${exMax(ex)>0?`${exMax(ex)} lbs`:"BW"}</span>
+            </div>
+          </div>`)}
+      </div>
+    </div>`;
+}
+
+// ── Trend / Stats Section ─────────────────────────────────
+function TrendStats({workouts}) {
+  if(!workouts.length) return null;
+  const vols   = workouts.map(wVol);
+  const avgVol = Math.round(vols.reduce((s,v)=>s+v,0)/vols.length);
+  const bestVol= Math.max(...vols);
+  const bestLbl= workouts[vols.indexOf(bestVol)].label;
+  const lastDelta= vols.length>=2?vols[vols.length-1]-vols[vols.length-2]:null;
+  const avgEx  = (workouts.reduce((s,w)=>s+w.exercises.length,0)/workouts.length).toFixed(1);
+  const avgSets= Math.round(workouts.reduce((s,w)=>s+wSets(w),0)/workouts.length);
+
+  const deltaCol = lastDelta===null?C.muted:lastDelta>0?C.teal:lastDelta<0?"#f87171":C.muted;
+  const deltaStr = lastDelta===null?"—":`${lastDelta>0?"+":""}${(lastDelta/1000).toFixed(1)}k lbs`;
+  const deltaIcon= lastDelta===null?"":lastDelta>0?"▲ ":lastDelta<0?"▼ ":"";
+
+  return html`
+    <div style="margin-bottom:22px">
+      <div style="font-size:10px;color:${C.muted};text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">Trends</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        ${[
+          ["Avg Volume",    `${(avgVol/1000).toFixed(1)}k lbs`, null,     C.text],
+          ["Best Session",  `${(bestVol/1000).toFixed(1)}k lbs`, bestLbl, C.text],
+          ["vs Last Session",`${deltaIcon}${deltaStr}`,          null,     deltaCol],
+          ["Avg Per Session",`${avgEx} ex · ${avgSets} sets`,    null,     C.text],
+        ].map(([k,v,sub,col])=>html`
+          <div style="background:${C.card};border-radius:10px;padding:12px 14px">
+            <div style="font-size:10px;color:${C.muted};text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">${k}</div>
+            <div style="font-size:15px;font-weight:700;color:${col}">${v}</div>
+            ${sub&&html`<div style="font-size:10px;color:${C.muted};margin-top:2px">${sub}</div>`}
+          </div>`)}
+      </div>
+    </div>`;
+}
+
+// ── Add Workout Modal ─────────────────────────────────────
+const iSt={width:"100%",background:C.card2,border:`1px solid ${C.border}`,borderRadius:"8px",padding:"10px 12px",color:C.text,fontSize:"14px"};
+function AddModal({addDate,setAddDate,addLabel,setAddLabel,addText,setAddText,addError,addOk,handleAdd,onClose}){
+  return html`
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,0.78);display:flex;align-items:flex-end;z-index:100"
+      onClick=${e=>e.target===e.currentTarget&&onClose()}>
+      <div style="background:${C.card};border-radius:20px 20px 0 0;width:100%;padding:24px;max-height:85vh;overflow-y:auto;animation:fadeIn .2s ease">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+          <h3 style="margin:0;font-size:18px;font-weight:700">Add Workout</h3>
+          <button onClick=${onClose} style="background:none;border:none;color:${C.muted};cursor:pointer;font-size:22px;line-height:1">✕</button>
+        </div>
+        <label style="font-size:11px;color:${C.muted};display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Date</label>
+        <input type="date" value=${addDate} onChange=${e=>setAddDate(e.target.value)} style=${{...iSt,marginBottom:"14px"}}/>
+        <label style="font-size:11px;color:${C.muted};display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Label (optional)</label>
+        <input type="text" value=${addLabel} placeholder="Auto-generated if blank" onChange=${e=>setAddLabel(e.target.value)} style=${{...iSt,marginBottom:"14px"}}/>
+        <label style="font-size:11px;color:${C.muted};display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Paste workout export</label>
+        <textarea placeholder="Paste the workout text from your app here…" onChange=${e=>setAddText(e.target.value)}
+          style=${{...iSt,height:"150px",resize:"vertical",fontFamily:"monospace",fontSize:"12px",marginBottom:"20px"}}>${addText}</textarea>
+        ${addError&&html`<div style="color:#f87171;font-size:13px;margin-bottom:12px">${addError}</div>`}
+        ${addOk   &&html`<div style="color:${C.teal};font-size:13px;margin-bottom:12px;font-weight:600">✓ Saved to cloud!</div>`}
+        <button onClick=${handleAdd}
+          style="width:100%;background:${C.accent};color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:700;cursor:pointer">
+          Parse & Save Workout
+        </button>
+      </div>
+    </div>`;
+}
+
+// ── Line Chart ────────────────────────────────────────────
+function LineChart({data}){
   if(data.length<2) return html`<div style="text-align:center;padding:36px 0;color:${C.muted};font-size:13px">Add more workouts to see a trend</div>`;
   const vals=data.map(d=>d.value),max=Math.max(...vals),min=Math.min(...vals),range=max-min||1;
   const vW=420,H=180,pL=48,pB=24,pT=16,pR=16,plotW=vW-pL-pR,plotH=H-pB-pT,step=plotW/(data.length-1);
@@ -163,96 +332,10 @@ function LineChart({data}) {
   </svg>`;
 }
 
-// ── Sync badge ────────────────────────────────────────────
-function SyncBadge({status}) {
-  const cfg = {loading:[C.muted,"Loading…"],saving:[C.muted,"Saving…"],saved:[C.teal,"✓ Synced"],error:["#f87171","⚠ Offline"]};
-  const [col,label] = cfg[status]||[null,null];
-  if (!label) return null;
-  const spin = status==="loading"||status==="saving";
-  return html`<span style="font-size:11px;color:${col};display:flex;align-items:center;gap:5px">
-    ${spin&&html`<span style="display:inline-block;width:10px;height:10px;border:1.5px solid ${col};border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite"/>`}
-    ${label}
-  </span>`;
-}
-
-// ── PIN screen ────────────────────────────────────────────
-function PinModal({person, onSuccess}) {
-  const [pin,setPin]       = useState("");
-  const [error,setError]   = useState("");
-  const [remember,setRemember] = useState(true);
-  const ref = useRef(null);
-  useEffect(()=>{ setTimeout(()=>ref.current?.focus(),100); },[]);
-
-  const submit = () => {
-    if (pin===PINS[person]) {
-      if (remember) localStorage.setItem(`workout-auth-${person}`,"true");
-      onSuccess();
-    } else {
-      setError("Wrong PIN — try again");
-      setPin("");
-      ref.current?.focus();
-    }
-  };
-
-  return html`
-    <div style="position:fixed;inset:0;background:${C.bg};display:flex;align-items:center;justify-content:center;z-index:200;padding:20px">
-      <div style="background:${C.card};border-radius:20px;padding:36px 28px;width:100%;max-width:320px;animation:fadeIn .25s ease;text-align:center">
-        <div style="width:54px;height:54px;background:${C.accent}22;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 18px;font-size:22px">🔒</div>
-        <h2 style="font-family:'Barlow Condensed',sans-serif;font-size:24px;font-weight:800;margin-bottom:6px">
-          ${person==="john"?"John":"Charlie"}'s <span style="color:${C.accent}">Workouts</span>
-        </h2>
-        <p style="color:${C.muted};font-size:13px;margin-bottom:26px">Enter your PIN to continue</p>
-        <input ref=${ref} type="password" inputmode="numeric" maxlength="8" value=${pin}
-          onInput=${e=>{setPin(e.target.value);setError("");}}
-          onKeyDown=${e=>{if(e.key==="Enter")submit();}}
-          placeholder="••••"
-          style="width:100%;background:${C.card2};border:2px solid ${error?"#f87171":C.border};border-radius:10px;padding:14px;color:${C.text};font-size:22px;text-align:center;letter-spacing:8px;margin-bottom:${error?"8px":"18px"};outline:none"/>
-        ${error&&html`<div style="color:#f87171;font-size:13px;margin-bottom:14px">${error}</div>`}
-        <label style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:20px;cursor:pointer;color:${C.muted};font-size:13px">
-          <input type="checkbox" checked=${remember} onChange=${e=>setRemember(e.target.checked)}
-            style="width:16px;height:16px;accent-color:${C.accent};cursor:pointer"/>
-          Remember me on this device
-        </label>
-        <button onClick=${submit}
-          style="width:100%;background:${C.accent};color:#fff;border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:700;cursor:pointer">
-          Unlock
-        </button>
-      </div>
-    </div>`;
-}
-
-// ── Add Workout Modal ─────────────────────────────────────
-const iSt = {width:"100%",background:C.card2,border:`1px solid ${C.border}`,borderRadius:"8px",padding:"10px 12px",color:C.text,fontSize:"14px"};
-
-function AddModal({addDate,setAddDate,addLabel,setAddLabel,addText,setAddText,addError,addOk,handleAdd,onClose}) {
-  return html`
-    <div style="position:fixed;inset:0;background:rgba(0,0,0,0.78);display:flex;align-items:flex-end;z-index:100"
-      onClick=${e=>e.target===e.currentTarget&&onClose()}>
-      <div style="background:${C.card};border-radius:20px 20px 0 0;width:100%;padding:24px;max-height:85vh;overflow-y:auto;animation:fadeIn .2s ease">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
-          <h3 style="margin:0;font-size:18px;font-weight:700">Add Workout</h3>
-          <button onClick=${onClose} style="background:none;border:none;color:${C.muted};cursor:pointer;font-size:22px;line-height:1">✕</button>
-        </div>
-        <label style="font-size:11px;color:${C.muted};display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Date</label>
-        <input type="date" value=${addDate} onChange=${e=>setAddDate(e.target.value)} style=${{...iSt,marginBottom:"14px"}}/>
-        <label style="font-size:11px;color:${C.muted};display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Label (optional)</label>
-        <input type="text" value=${addLabel} placeholder="Auto-generated if blank" onChange=${e=>setAddLabel(e.target.value)} style=${{...iSt,marginBottom:"14px"}}/>
-        <label style="font-size:11px;color:${C.muted};display:block;margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Paste workout export</label>
-        <textarea placeholder="Paste the workout text from your app here…" onChange=${e=>setAddText(e.target.value)}
-          style=${{...iSt,height:"150px",resize:"vertical",fontFamily:"monospace",fontSize:"12px",marginBottom:"20px"}}>${addText}</textarea>
-        ${addError&&html`<div style="color:#f87171;font-size:13px;margin-bottom:12px">${addError}</div>`}
-        ${addOk&&html`<div style="color:${C.teal};font-size:13px;margin-bottom:12px;font-weight:600">✓ Saved to cloud!</div>`}
-        <button onClick=${handleAdd}
-          style="width:100%;background:${C.accent};color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:700;cursor:pointer">
-          Parse & Save Workout
-        </button>
-      </div>
-    </div>`;
-}
-
 // ── WorkoutTracker ────────────────────────────────────────
 function WorkoutTracker({person, onSync}) {
   const [workouts,   setWorkouts]   = useState(null);
+  const [sessionIdx, setSessionIdx] = useState(null);
   const [selected,   setSelected]   = useState(null);
   const [metric,     setMetric]     = useState("maxWeight");
   const [showAdd,    setShowAdd]    = useState(false);
@@ -267,42 +350,37 @@ function WorkoutTracker({person, onSync}) {
     onSync("loading");
     (async()=>{
       try {
-        const raw   = await fetchBin(person);
-        const clean = cleanBin(raw);
-        const seed  = person==="charlie"?CHARLIE_SEED:[];
-        const data  = clean.length>0?clean:seed;
-        skipSave.current=true;
-        setWorkouts(data);
-        onSync("idle");
-        if (clean.length===0&&seed.length>0) await saveBin(person,seed);
+        const raw=await fetchBin(person), clean=cleanBin(raw);
+        const seed=person==="charlie"?CHARLIE_SEED:[];
+        const data=clean.length>0?clean:seed;
+        skipSave.current=true; setWorkouts(data); onSync("idle");
+        if(clean.length===0&&seed.length>0) await saveBin(person,seed);
       } catch {
-        try {
-          const s=localStorage.getItem(`wt-${person}`);
-          setWorkouts(s?JSON.parse(s):(person==="charlie"?CHARLIE_SEED:[]));
-        } catch { setWorkouts(person==="charlie"?CHARLIE_SEED:[]); }
+        try { const s=localStorage.getItem(`wt-${person}`); setWorkouts(s?JSON.parse(s):(person==="charlie"?CHARLIE_SEED:[])); }
+        catch { setWorkouts(person==="charlie"?CHARLIE_SEED:[]); }
         onSync("error");
       }
     })();
   },[person]);
 
   useEffect(()=>{
-    if (workouts===null) return;
-    if (skipSave.current) { skipSave.current=false; return; }
-    try { localStorage.setItem(`wt-${person}`,JSON.stringify(workouts)); } catch {}
+    if(workouts===null) return;
+    if(skipSave.current){skipSave.current=false;return;}
+    try{localStorage.setItem(`wt-${person}`,JSON.stringify(workouts));}catch{}
     onSync("saving");
     saveBin(person,workouts)
-      .then(()=>{ onSync("saved"); setTimeout(()=>onSync("idle"),2500); })
+      .then(()=>{onSync("saved");setTimeout(()=>onSync("idle"),2500);})
       .catch(()=>onSync("error"));
   },[workouts]);
 
-  const allNames = workouts?[...new Set(workouts.flatMap(w=>w.exercises.map(e=>e.name)))].sort():[];
-  const getHist  = name=>(workouts||[]).filter(w=>w.exercises.some(e=>e.name===name)).map(w=>{
+  const allNames=[...new Set((workouts||[]).flatMap(w=>w.exercises.map(e=>e.name)))].sort();
+  const getHist =name=>(workouts||[]).filter(w=>w.exercises.some(e=>e.name===name)).map(w=>{
     const ex=w.exercises.find(e=>e.name===name);
     return{label:w.label,maxWeight:exMax(ex),volume:exVol(ex),sets:ex.sets};
   });
-  const getDelta = name=>{const h=getHist(name);return h.length<2?null:h[h.length-1].maxWeight-h[h.length-2].maxWeight;};
-  const closeAdd = ()=>{setShowAdd(false);setAddError("");setAddOk(false);};
-  const handleAdd= ()=>{
+  const getDelta=name=>{const h=getHist(name);return h.length<2?null:h[h.length-1].maxWeight-h[h.length-2].maxWeight;};
+  const closeAdd=()=>{setShowAdd(false);setAddError("");setAddOk(false);};
+  const handleAdd=()=>{
     setAddError("");setAddOk(false);
     if(!addDate||!addText.trim()){setAddError("Date and workout text are required.");return;}
     if(workouts.some(w=>w.date===addDate)){setAddError("A workout already exists for this date.");return;}
@@ -310,18 +388,20 @@ function WorkoutTracker({person, onSync}) {
     if(!exercises.length){setAddError("No exercises found — check the format matches your app export.");return;}
     const nw={id:`w-${addDate}`,date:addDate,label:addLabel||autoLabel(addDate),exercises};
     setWorkouts(prev=>[...prev,nw].sort((a,b)=>a.date.localeCompare(b.date)));
+    setSessionIdx(null);
     setAddOk(true);
     setTimeout(()=>{closeAdd();setAddDate("");setAddLabel("");setAddText("");setAddOk(false);},900);
   };
   const mProps={addDate,setAddDate,addLabel,setAddLabel,addText,setAddText,addError,addOk,handleAdd,onClose:closeAdd};
 
-  if (workouts===null) return html`
+  if(workouts===null) return html`
     <div style="display:flex;align-items:center;justify-content:center;height:60vh;color:${C.muted};gap:10px;font-size:14px">
       <span style="display:inline-block;width:18px;height:18px;border:2px solid ${C.accent};border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite"/>
       Loading from cloud…
     </div>`;
 
-  if (selected) {
+  // ── Exercise detail ──
+  if(selected){
     const hist=getHist(selected);
     const chartData=hist.map(h=>({name:h.label,value:metric==="maxWeight"?h.maxWeight:h.volume}));
     const best=Math.max(...hist.map(h=>h.maxWeight));
@@ -365,10 +445,8 @@ function WorkoutTracker({person, onSync}) {
       </div>`;
   }
 
-  const totalLbs=workouts.reduce((s,w)=>s+wVol(w),0);
-  const volData=workouts.map(w=>({label:w.label,volume:wVol(w)}));
-
-  if (!workouts.length) return html`
+  // ── Dashboard ──
+  if(!workouts.length) return html`
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:16px;color:${C.muted};padding:20px;text-align:center">
       <div style="font-size:52px">🏋️</div>
       <div style="font-size:20px;font-weight:700;color:${C.text}">No workouts yet</div>
@@ -379,8 +457,12 @@ function WorkoutTracker({person, onSync}) {
       ${showAdd&&html`<${AddModal} ...${mProps}/>`}
     </div>`;
 
+  const totalLbs=workouts.reduce((s,w)=>s+wVol(w),0);
+  const volData=workouts.map(w=>({label:w.label,volume:wVol(w)}));
+
   return html`
     <div style="padding:20px">
+      <!-- Top stats -->
       <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:20px">
         <div style="display:flex;gap:20px">
           ${[["Sessions",workouts.length],["Exercises",allNames.length],["Lifted",`${(totalLbs/1000).toFixed(1)}k lbs`]].map(([k,v])=>html`
@@ -391,10 +473,27 @@ function WorkoutTracker({person, onSync}) {
         </div>
         <button onClick=${()=>setShowAdd(true)} style="background:${C.accent};color:#fff;border:none;border-radius:10px;padding:10px 16px;cursor:pointer;font-size:13px;font-weight:700">+ Add</button>
       </div>
-      <div style="background:${C.card};border-radius:12px;padding:16px 8px 10px;margin-bottom:24px">
-        <div style="font-size:10px;color:${C.muted};text-transform:uppercase;letter-spacing:1px;padding-left:8px;margin-bottom:12px">Session Volume (lbs)</div>
-        <${BarChart} data=${volData}/>
+
+      <!-- Volume chart -->
+      <div style="background:${C.card};border-radius:12px;padding:16px 8px 10px;margin-bottom:${sessionIdx!==null?"0":"16px"}">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:0 8px;margin-bottom:12px">
+          <div style="font-size:10px;color:${C.muted};text-transform:uppercase;letter-spacing:1px">Session Volume (lbs)</div>
+          ${sessionIdx!==null&&html`<div style="font-size:11px;color:${C.teal}">Tap again to close</div>`}
+          ${sessionIdx===null&&html`<div style="font-size:11px;color:${C.muted}">Tap a bar for details</div>`}
+        </div>
+        <${BarChart} data=${volData} selectedIdx=${sessionIdx} onSelect=${setSessionIdx}/>
       </div>
+
+      <!-- Session detail panel -->
+      ${sessionIdx!==null&&html`
+        <div style="background:${C.card};border-radius:0 0 12px 12px;padding:0 8px 12px;margin-bottom:16px">
+          <${SessionDetail} workout=${workouts[sessionIdx]}/>
+        </div>`}
+
+      <!-- Trend stats -->
+      <${TrendStats} workouts=${workouts}/>
+
+      <!-- Exercise grid -->
       <div style="font-size:10px;color:${C.muted};text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">Exercises — tap to view progression</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-bottom:20px">
         ${allNames.map(name=>{
@@ -417,21 +516,50 @@ function WorkoutTracker({person, onSync}) {
     </div>`;
 }
 
-// ── App shell ─────────────────────────────────────────────
+// ── App Shell ─────────────────────────────────────────────
 function App() {
-  const [tab,      setTab]      = useState("charlie");
-  const [syncStatus,setSyncStatus] = useState("idle");
-  const [auth,     setAuth]     = useState(()=>({
+  const [syncStatus, setSyncStatus] = useState("idle");
+
+  // Determine initial state: skip picker if exactly one person is remembered
+  const [picked, setPicked] = useState(()=>{
+    const c=localStorage.getItem("workout-auth-charlie")==="true";
+    const j=localStorage.getItem("workout-auth-john")==="true";
+    if(c&&!j) return "charlie";
+    if(j&&!c) return "john";
+    return null;
+  });
+
+  const [tab, setTab] = useState(()=>{
+    const c=localStorage.getItem("workout-auth-charlie")==="true";
+    const j=localStorage.getItem("workout-auth-john")==="true";
+    if(c&&!j) return "charlie";
+    if(j&&!c) return "john";
+    return "charlie";
+  });
+
+  const [auth, setAuth] = useState(()=>({
     john:    localStorage.getItem("workout-auth-john")==="true",
     charlie: localStorage.getItem("workout-auth-charlie")==="true"
   }));
-  const [pinTarget,setPinTarget] = useState(()=>
-    localStorage.getItem("workout-auth-charlie")!=="true"?"charlie":null
-  );
+
+  const [pinTarget, setPinTarget] = useState(()=>{
+    const c=localStorage.getItem("workout-auth-charlie")==="true";
+    const j=localStorage.getItem("workout-auth-john")==="true";
+    // If skipping picker, check if PIN is needed
+    if(c&&!j) return null;  // charlie remembered, no PIN needed
+    if(j&&!c) return null;  // john remembered, no PIN needed
+    return null;             // picker shown, PIN deferred
+  });
+
+  const pickUser = person => {
+    setPicked(person);
+    setTab(person);
+    if(!auth[person]) setPinTarget(person);
+  };
 
   const switchTab = newTab => {
     setTab(newTab);
-    if (!auth[newTab]) setPinTarget(newTab);
+    if(!auth[newTab]) setPinTarget(newTab);
   };
 
   const unlock = person => {
@@ -442,14 +570,24 @@ function App() {
   const lock = person => {
     localStorage.removeItem(`workout-auth-${person}`);
     setAuth(prev=>({...prev,[person]:false}));
-    setPinTarget(person);
+    // Go back to picker if locking the only remembered person
+    const otherPerson = person==="john"?"charlie":"john";
+    if(!auth[otherPerson]){
+      setPicked(null);
+      setPinTarget(null);
+    } else {
+      setPinTarget(person);
+    }
   };
+
+  // Show picker
+  if(picked===null) return html`<${UserPicker} onPick=${pickUser}/>`;
+
+  // Show PIN
+  if(pinTarget) return html`<${PinModal} person=${pinTarget} onSuccess=${()=>unlock(pinTarget)} onBack=${()=>{setPicked(null);setPinTarget(null);}}/>`;
 
   return html`
     <div style="background:${C.bg};min-height:100vh;color:${C.text};max-width:620px;margin:0 auto">
-
-      ${pinTarget&&html`<${PinModal} person=${pinTarget} onSuccess=${()=>unlock(pinTarget)}/>`}
-
       <div style="padding:18px 20px 0;background:linear-gradient(160deg,#161c2d 0%,#0d1117 100%);border-bottom:1px solid ${C.border};position:sticky;top:0;z-index:10">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
           <h1 style="font-family:'Barlow Condensed',sans-serif;font-size:26px;font-weight:800;letter-spacing:1px">
@@ -457,7 +595,7 @@ function App() {
           </h1>
           <div style="display:flex;align-items:center;gap:10px">
             <${SyncBadge} status=${syncStatus}/>
-            <button onClick=${()=>lock(tab)} title="Lock this account"
+            <button onClick=${()=>lock(tab)} title="Lock account"
               style="background:${C.card2};border:1px solid ${C.border};color:${C.muted};border-radius:8px;padding:6px 11px;cursor:pointer;font-size:13px">
               🔒 Lock
             </button>
@@ -477,8 +615,7 @@ function App() {
         : html`<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:12px;color:${C.muted}">
             <span style="font-size:32px">🔒</span>
             <span style="font-size:14px">Tap the tab above to unlock</span>
-          </div>`
-      }
+          </div>`}
     </div>`;
 }
 
