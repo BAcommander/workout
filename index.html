@@ -905,29 +905,31 @@ function TripleRing(props) {
   return ce('div',{style:{display:'flex',alignItems:'center',gap:18}},
     ce('div',{style:{position:'relative',width:size,height:size,flexShrink:0}},
       ce(ConcentricRings,{rings:rings,size:size,bandW:13,gap:3,onTap:onToggle,activeKey:activeKey,idPrefix:'hero'})),
-    // Stat list (right column) — each row is also tap-to-expand
-    ce('div',{style:{display:'flex',flexDirection:'column',gap:8,flex:1,minWidth:0}},
+    // Stat list (right column)
+    ce('div',{style:{display:'flex',flexDirection:'column',gap:6,flex:1,minWidth:0}},
+      // Shared "THIS WEEK" header — shown once, not repeated per row
+      ce('div',{style:{fontSize:9,color:C.muted,letterSpacing:1.4,fontWeight:700,textTransform:'uppercase',marginBottom:2,paddingLeft:2}},'This Week'),
       rings.map(function(r){
         var hitGoal = r.value >= r.target && r.target>0;
         var isActive = activeKey===r.key;
         return ce('button',{key:r.key,onClick:function(){onToggle(r.key);},style:{
           textAlign:'left',cursor:'pointer',
-          display:'flex',alignItems:'center',gap:10,
-          padding:'8px 10px',borderRadius:10,
+          display:'flex',alignItems:'center',gap:8,
+          padding:'7px 10px',borderRadius:10,
           background:'linear-gradient(160deg,'+r.hue+(isActive?'28':'18')+' 0%,'+r.hue+'06 100%)',
           border:'1px solid '+r.hue+(isActive?'88':hitGoal?'55':'22'),
           boxShadow: isActive ? '0 0 0 2px '+r.hue+'33' : 'none',
-          transition:'background .15s, border-color .15s'
+          transition:'background .15s, border-color .15s',
+          width:'100%'
         }},
-          ce('span',{style:{fontSize:18,opacity:hitGoal?1:.55,filter:hitGoal?'drop-shadow(0 0 6px '+r.hue+')':'none'}},r.icon),
+          ce('span',{style:{fontSize:16,opacity:hitGoal?1:.55,filter:hitGoal?'drop-shadow(0 0 6px '+r.hue+')':'none',flexShrink:0}},r.icon),
           ce('div',{style:{flex:1,minWidth:0}},
-            ce('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:6}},
-              ce('span',{style:{fontSize:9,color:r.hue,letterSpacing:1.4,fontWeight:800,textTransform:'uppercase'}},r.label),
-              ce('span',{style:{fontSize:9,color:C.muted,letterSpacing:.8,fontWeight:600,textTransform:'uppercase',whiteSpace:'nowrap'}},r.hint)),
-            ce('div',{style:{display:'flex',alignItems:'baseline',gap:4,marginTop:1}},
-              ce('span',{style:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:20,fontWeight:800,color:hitGoal?r.hue:C.text,letterSpacing:.3,lineHeight:1}}, r.formatVal ? r.formatVal(r.value) : r.value),
-              ce('span',{style:{fontSize:11,color:C.muted,fontWeight:600}},'/ '+(r.formatVal?r.formatVal(r.target):r.target)+' '+r.unit))),
-          ce('span',{style:{fontSize:11,color:isActive?r.hue:C.muted,fontWeight:700,marginLeft:4,transition:'transform .2s',display:'inline-block',transform:isActive?'rotate(180deg)':'rotate(0)'}},'⌄'));
+            // Label only — no "THIS WEEK" hint repeated here
+            ce('div',{style:{fontSize:9,color:r.hue,letterSpacing:1.2,fontWeight:800,textTransform:'uppercase',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}},r.label),
+            ce('div',{style:{display:'flex',alignItems:'baseline',gap:3,marginTop:1,flexWrap:'nowrap'}},
+              ce('span',{style:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:19,fontWeight:800,color:hitGoal?r.hue:C.text,letterSpacing:.3,lineHeight:1}}, r.formatVal ? r.formatVal(r.value) : r.value),
+              ce('span',{style:{fontSize:10,color:C.muted,fontWeight:600,whiteSpace:'nowrap'}},' / '+(r.formatVal?r.formatVal(r.target):r.target)+' '+r.unit))),
+          ce('span',{style:{fontSize:11,color:isActive?r.hue:C.muted,fontWeight:700,flexShrink:0,transition:'transform .2s',display:'inline-block',transform:isActive?'rotate(180deg)':'rotate(0)'}},'⌄'));
       })));
 }
 
@@ -936,11 +938,12 @@ function TripleRing(props) {
 function HistoryRings(props) {
   var weeks    = props.weeks;
   var goals    = props.goals;
-  var activeKey= props.activeKey;
-  var onSwitch = props.onSwitch;
   var onClose  = props.onClose;
   var workouts = props.workouts || [];
 
+  // Local metric state — decoupled from parent expandedRing
+  // Initialise from props.activeKey (which ring was tapped to open the panel)
+  var sm = useState(props.activeKey||'pbs'); var activeKey=sm[0]; var setActiveKey=sm[1];
   var sw = useState(null); var selectedWeekKey=sw[0]; var setSelectedWeekKey=sw[1];
 
   var goalField  = activeKey==='pbs'?'pbs':activeKey==='hit'?'hits':'vol';
@@ -1040,7 +1043,7 @@ function HistoryRings(props) {
         var hue=k==='pbs'?RING_PALETTE.pbs.hue:k==='hit'?RING_PALETTE.hit.hue:RING_PALETTE.vol.hue;
         var lbl=k==='pbs'?'PBs':k==='hit'?'Muscles':'Volume';
         var on=k===activeKey;
-        return ce('button',{key:k,onClick:function(){onSwitch(k);},style:{
+        return ce('button',{key:k,onClick:function(){setActiveKey(k);},style:{
           display:'inline-flex',alignItems:'center',gap:6,
           background:on?hue+'22':'transparent',
           border:'1px solid '+(on?hue+'66':C.border),
@@ -1366,7 +1369,7 @@ function WorkoutTracker(props) {
       ce(TripleRing,{pbs:pbsCount,hit:hitCount,vol:volCount,goals:goals,activeKey:expandedRing,onToggle:toggleRing})),
 
     // ── 12-week history rings (collapsed until a ring is tapped)
-    expandedRing ? ce(HistoryRings,{weeks:weeks,goals:goals,activeKey:expandedRing,onSwitch:toggleRing,onClose:function(){setExpandedRing(null);},workouts:workouts}) : null,
+    expandedRing ? ce(HistoryRings,{weeks:weeks,goals:goals,activeKey:expandedRing,onClose:function(){setExpandedRing(null);},workouts:workouts}) : null,
 
     // ── Lifted total (full-width chip) + Add button
     ce('div',{style:{display:'flex',gap:10,marginBottom:20}},
