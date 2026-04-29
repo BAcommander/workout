@@ -100,6 +100,72 @@ function prsThisWeek(workouts) {
   return Object.keys(prSet).length;
 }
 
+function calcStreak(workouts) {
+  if(!workouts.length) return 0;
+  // Get ISO week string "YYYY-Www" for a date string
+  function isoWeek(ds) {
+    var d=new Date(ds+'T12:00:00');
+    var tmp=new Date(d);
+    tmp.setHours(0,0,0,0);
+    tmp.setDate(tmp.getDate()+4-(tmp.getDay()||7));
+    var yr=tmp.getFullYear();
+    var wk=Math.ceil((((tmp-new Date(yr,0,1))/86400000)+1)/7);
+    return yr+'-W'+(wk<10?'0':'')+wk;
+  }
+  // Count sessions per week
+  var weekMap={};
+  workouts.forEach(function(w){
+    var wk=isoWeek(w.date);
+    weekMap[wk]=(weekMap[wk]||0)+1;
+  });
+  // Collect qualifying weeks (>=2 sessions) sorted descending
+  var qualWeeks=Object.keys(weekMap).filter(function(wk){return weekMap[wk]>=2;}).sort().reverse();
+  if(!qualWeeks.length) return 0;
+  // Current week
+  var now=isoWeek(new Date().toISOString().slice(0,10));
+  // Walk back from most recent qualifying week counting consecutive
+  var streak=0, expected=qualWeeks[0];
+  // If most recent qualifying week is not this week or last week, streak is 0
+  function weeksBetween(a,b){
+    // parse back to a Monday date for comparison
+    function mondayOf(yw){
+      var parts=yw.split('-W'), yr=parseInt(parts[0]), wk=parseInt(parts[1]);
+      var jan4=new Date(yr,0,4);
+      var ms=jan4.getTime()+(wk-1)*7*86400000;
+      var d=new Date(ms);
+      d.setDate(d.getDate()-((d.getDay()||7)-1));
+      return d;
+    }
+    return Math.round((mondayOf(a)-mondayOf(b))/(7*86400000));
+  }
+  if(weeksBetween(now,qualWeeks[0])>1) return 0; // stale
+  for(var i=0;i<qualWeeks.length;i++){
+    if(i===0){ streak=1; expected=qualWeeks[0]; continue; }
+    if(weeksBetween(expected,qualWeeks[i])===1){ streak++; expected=qualWeeks[i]; }
+    else break;
+  }
+  return streak;
+}
+
+function getAllTimePBs(workouts) {
+  // For each exercise, find the session where the all-time max was set
+  var sorted=workouts.slice().sort(function(a,b){return a.date<b.date?-1:1;});
+  var pbMap={};
+  sorted.forEach(function(w){
+    w.exercises.forEach(function(ex){
+      var m=exMax(ex); if(m===0) return;
+      if(!pbMap[ex.name]||m>pbMap[ex.name].weight)
+        pbMap[ex.name]={weight:m,label:w.label,date:w.date};
+    });
+  });
+  return Object.keys(pbMap).map(function(name){
+    return {name:name,weight:pbMap[name].weight,label:pbMap[name].label,date:pbMap[name].date};
+  }).sort(function(a,b){
+    // Sort by date of PB descending (most recently set first)
+    return b.date<a.date?-1:b.date>a.date?1:0;
+  });
+}
+
 function autoLabel(ds) {
   var d=new Date(ds+'T12:00:00');
   return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()]+' '+d.getDate()+' '+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()];
@@ -120,7 +186,22 @@ function parseWorkoutText(text) {
 // ── JSONBin ───────────────────────────────────────────────
 var bHdrs={'X-Access-Key':API_KEY};
 function binUrl(p){ return 'https://api.jsonbin.io/v3/b/'+BINS[p]; }
-function fetchBin(p){ return fetch(binUrl(p),{headers:bHdrs}).then(function(r){ if(!r.ok) throw new Error(); return r.json(); }).then(function(j){ return j.record; }); }
+function fetchWithTimeout(url,opts,ms){
+  return new Promise(function(resolve,reject){
+    var t=setTimeout(function(){reject(new Error('timeout'));},ms||7000);
+    fetch(url,opts).then(function(r){clearTimeout(t);resolve(r);}).catch(function(e){clearTimeout(t);reject(e);});
+  });
+}
+function fetchBin(p,retries){
+  retries=retries===undefined?1:retries;
+  return fetchWithTimeout(binUrl(p),{headers:bHdrs},7000)
+    .then(function(r){if(!r.ok) throw new Error();return r.json();})
+    .then(function(j){return j.record;})
+    .catch(function(e){
+      if(retries>0) return new Promise(function(res){setTimeout(res,2000);}).then(function(){return fetchBin(p,retries-1);});
+      throw e;
+    });
+}
 function saveBin(p,data){ return fetch(binUrl(p),{method:'PUT',headers:Object.assign({'Content-Type':'application/json'},bHdrs),body:JSON.stringify(data)}).then(function(r){ if(!r.ok) throw new Error(); }); }
 
 // ── Shared styles ─────────────────────────────────────────
@@ -182,10 +263,13 @@ function PinModal(props) {
 
 // ── SyncBadge ─────────────────────────────────────────────
 function SyncBadge(props) {
-  var cfg={loading:[C.muted,'Loading…'],saving:[C.muted,'Saving…'],saved:[C.teal,'✓ Synced'],error:['#f87171','⚠ Offline']};
+  var cfg={loading:[C.muted,'Loading…'],saving:[C.muted,'Saving…'],saved:[C.teal,'✓ Synced'],error:['#f87171','⚠ Offline — tap to retry']};
   var pair=cfg[props.status]; if(!pair) return null;
   var col=pair[0],label=pair[1],spin=props.status==='loading'||props.status==='saving';
-  return ce('span',{style:{fontSize:11,color:col,display:'flex',alignItems:'center',gap:5}},
+  var canRetry=props.status==='error'&&props.onRetry;
+  return ce('span',{
+    onClick:canRetry?props.onRetry:undefined,
+    style:{fontSize:11,color:col,display:'flex',alignItems:'center',gap:5,cursor:canRetry?'pointer':'default',userSelect:'none'}},
     spin?ce('span',{style:{display:'inline-block',width:10,height:10,border:'1.5px solid '+col,borderTopColor:'transparent',borderRadius:'50%',animation:'spin .7s linear infinite'}}):null,
     label);
 }
@@ -213,34 +297,63 @@ function BarChart(props) {
   return ce('svg',{viewBox:'0 0 '+vW+' '+H,style:{width:'100%',height:H}},grid,bars);
 }
 
-// ── LineChart ─────────────────────────────────────────────
+// ── LineChart (with optional rolling average trend line) ──
 function LineChart(props) {
-  var data=props.data;
+  var data=props.data, trend=props.trend||[];
   if(data.length<2) return ce('div',{style:{textAlign:'center',padding:'36px 0',color:C.muted,fontSize:13}},'Add more workouts to see a trend');
-  var vals=data.map(function(d){return d.value;}),max=Math.max.apply(null,vals),min=Math.min.apply(null,vals),range=max-min||1;
-  var vW=420,H=180,pL=48,pB=24,pT=16,pR=16,plotW=vW-pL-pR,plotH=H-pB-pT,step=plotW/(data.length-1);
-  var pts=data.map(function(d,i){return Object.assign({},d,{x:pL+i*step,y:pT+plotH-((d.value-min)/range)*plotH});});
+
+  // Combine actual + trend values to get a shared scale
+  var allVals=data.map(function(d){return d.value;}).concat(trend.map(function(t){return t.value;}));
+  var max=Math.max.apply(null,allVals), min=Math.min.apply(null,allVals), range=max-min||1;
+  var vW=420,H=200,pL=48,pB=24,pT=16,pR=16,plotW=vW-pL-pR,plotH=H-pB-pT;
+  var step=plotW/(data.length-1);
+
+  function toY(v){ return pT+plotH-((v-min)/range)*plotH; }
+
+  var pts=data.map(function(d,i){return {x:pL+i*step, y:toY(d.value), name:d.name, value:d.value};});
   var pD=pts.map(function(p,i){return (i===0?'M':'L')+' '+p.x.toFixed(1)+' '+p.y.toFixed(1);}).join(' ');
   var aD=pD+' L '+pts[pts.length-1].x+' '+(pT+plotH)+' L '+pL+' '+(pT+plotH)+' Z';
+
+  // Trend line — only render if we have 3+ sessions
+  var trendPath=null;
+  if(trend.length>=3){
+    var tPts=trend.map(function(t,i){return {x:pL+i*step, y:toY(t.value)};});
+    var tD=tPts.map(function(p,i){return (i===0?'M':'L')+' '+p.x.toFixed(1)+' '+p.y.toFixed(1);}).join(' ');
+    trendPath=ce('path',{d:tD,fill:'none',stroke:C.teal,strokeWidth:2,strokeLinecap:'round',strokeLinejoin:'round',strokeDasharray:'6 3',opacity:0.85});
+  }
+
   var grid=[min,Math.round((min+max)/2),max].reduce(function(acc,v){
-    var y=pT+plotH-((v-min)/range)*plotH;
+    var y=toY(v);
     acc.push(ce('line',{key:'gl'+v,x1:pL,y1:y,x2:vW-pR,y2:y,stroke:C.border,strokeWidth:0.5}));
     acc.push(ce('text',{key:'gt'+v,x:pL-5,y:y+4,textAnchor:'end',fill:C.muted,fontSize:9},String(v)));
     return acc;
   },[]);
+
   var dots=pts.reduce(function(acc,p,i){
-    acc.push(ce('circle',{key:'c'+i,cx:p.x,cy:p.y,r:5,fill:C.accent}));
+    acc.push(ce('circle',{key:'c'+i,cx:p.x,cy:p.y,r:4,fill:C.accent,stroke:C.card,strokeWidth:1.5}));
     acc.push(ce('text',{key:'tl'+i,x:p.x,y:H-4,textAnchor:'middle',fill:C.muted,fontSize:10},p.name));
     return acc;
   },[]);
-  return ce('svg',{viewBox:'0 0 '+vW+' '+H,style:{width:'100%',height:H}},
-    ce('defs',null,ce('linearGradient',{id:'lg',x1:'0',y1:'0',x2:'0',y2:'1'},
-      ce('stop',{offset:'0%',stopColor:C.accent,stopOpacity:0.25}),
-      ce('stop',{offset:'100%',stopColor:C.accent,stopOpacity:0}))),
-    grid,
-    ce('path',{d:aD,fill:'url(#lg)'}),
-    ce('path',{d:pD,fill:'none',stroke:C.accent,strokeWidth:2.5,strokeLinecap:'round',strokeLinejoin:'round'}),
-    dots);
+
+  return ce('div',null,
+    ce('svg',{viewBox:'0 0 '+vW+' '+H,style:{width:'100%',height:H}},
+      ce('defs',null,ce('linearGradient',{id:'lg',x1:'0',y1:'0',x2:'0',y2:'1'},
+        ce('stop',{offset:'0%',stopColor:C.accent,stopOpacity:0.2}),
+        ce('stop',{offset:'100%',stopColor:C.accent,stopOpacity:0}))),
+      grid,
+      ce('path',{d:aD,fill:'url(#lg)'}),
+      ce('path',{d:pD,fill:'none',stroke:C.accent,strokeWidth:2,strokeLinecap:'round',strokeLinejoin:'round',opacity:0.6}),
+      trendPath,
+      dots),
+    // Legend — only shown when trend line is present
+    trend.length>=3?ce('div',{style:{display:'flex',gap:16,justifyContent:'center',paddingTop:6,paddingBottom:4}},
+      ce('div',{style:{display:'flex',alignItems:'center',gap:5,fontSize:11,color:C.muted}},
+        ce('span',{style:{display:'inline-block',width:18,height:2,background:C.accent,borderRadius:1,opacity:0.6}}),
+        'Actual'),
+      ce('div',{style:{display:'flex',alignItems:'center',gap:5,fontSize:11,color:C.teal}},
+        ce('span',{style:{display:'inline-block',width:18,height:2,background:C.teal,borderRadius:1,borderTop:'2px dashed '+C.teal}}),
+        '3-session avg')):null
+  );
 }
 
 // ── SessionDetail ─────────────────────────────────────────
@@ -325,6 +438,32 @@ function AddModal(props) {
       ce('button',{onClick:p.handleAdd,style:{width:'100%',background:C.accent,color:'#fff',border:'none',borderRadius:10,padding:14,fontSize:15,fontWeight:700,cursor:'pointer'}},'Parse & Save Workout')));
 }
 
+// ── AllTimePBs ────────────────────────────────────────────
+function AllTimePBs(props) {
+  var pbs=getAllTimePBs(props.workouts);
+  return ce('div',{style:{padding:20}},
+    ce('button',{onClick:props.onClose,style:{background:'none',border:'none',color:C.muted,cursor:'pointer',fontSize:14,marginBottom:18,padding:0}},'← Back'),
+    ce('h2',{style:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:26,fontWeight:800,marginBottom:4}},'All-Time ',ce('span',{style:{color:C.accent}},'Personal Bests')),
+    ce('p',{style:{color:C.muted,fontSize:13,marginBottom:20}},pbs.length+' exercises tracked'),
+    !pbs.length
+      ?ce('div',{style:{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:14}},'No data yet — add some workouts first')
+      :ce('div',{style:{display:'flex',flexDirection:'column',gap:8,paddingBottom:20}},
+          pbs.map(function(pb,i){
+            var isRecent=new Date(pb.date)>=new Date(Date.now()-7*24*60*60*1000);
+            return ce('div',{key:pb.name,style:{background:C.card,borderRadius:10,padding:'14px 16px',display:'flex',alignItems:'center',gap:12,borderLeft:'3px solid '+(isRecent?'#f59e0b':C.border)}},
+              // Rank
+              ce('div',{style:{fontSize:12,fontWeight:700,color:C.muted,minWidth:22,textAlign:'center'}},i===0?'🥇':i===1?'🥈':i===2?'🥉':String(i+1)),
+              // Name + when
+              ce('div',{style:{flex:1,minWidth:0}},
+                ce('div',{style:{fontSize:13,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},pb.name),
+                ce('div',{style:{fontSize:11,color:C.muted,marginTop:2}},pb.label+(isRecent?' · 🔥 This week':''))),
+              // Weight
+              ce('div',{style:{textAlign:'right'}},
+                ce('div',{style:{fontSize:18,fontWeight:700,color:isRecent?'#f59e0b':C.teal}},pb.weight+' lbs'),
+                ce('div',{style:{fontSize:10,color:C.muted}},'best weight')));
+          })));
+}
+
 // ── WorkoutTracker ────────────────────────────────────────
 function WorkoutTracker(props) {
   var person=props.person,onSync=props.onSync;
@@ -339,9 +478,12 @@ function WorkoutTracker(props) {
   var s9 =useState(''),    addDuration=s9[0], setAddDuration=s9[1];
   var s10=useState(''),    addError  =s10[0], setAddError  =s10[1];
   var s11=useState(false), addOk     =s11[0], setAddOk     =s11[1];
+  var s12=useState(false), showPBs   =s12[0], setShowPBs   =s12[1];
   var skipSave=useRef(true);
 
   useEffect(function(){
+    setWorkouts(null);
+    setSessionIdx(null);
     onSync('loading');
     fetchBin(person).then(function(raw){
       var clean=cleanBin(raw),seed=person==='charlie'?CHARLIE_SEED:[];
@@ -353,7 +495,7 @@ function WorkoutTracker(props) {
       catch(e){ setWorkouts(person==='charlie'?CHARLIE_SEED:[]); }
       onSync('error');
     });
-  },[person]);
+  },[person, props.retryKey]);
 
   useEffect(function(){
     if(workouts===null) return;
@@ -425,7 +567,18 @@ function WorkoutTracker(props) {
               style:{background:metric===m?C.accent:C.card2,color:metric===m?'#fff':C.muted,border:'none',borderRadius:6,padding:'6px 14px',cursor:'pointer',fontSize:12,fontWeight:700}},
               m==='maxWeight'?'Max Weight':'Volume');
           })),
-        ce(LineChart,{data:chartData})),
+        (function(){
+          // 3-session rolling average
+          var vals=chartData.map(function(d){return d.value;});
+          var W=3;
+          var trend=chartData.map(function(d,i){
+            var start=Math.max(0,i-W+1);
+            var slice=vals.slice(start,i+1);
+            var avg=Math.round(slice.reduce(function(s,v){return s+v;},0)/slice.length);
+            return {name:d.name,value:avg};
+          });
+          return ce(LineChart,{data:chartData,trend:trend});
+        })()),
       ce('div',{style:{fontSize:10,color:C.muted,textTransform:'uppercase',letterSpacing:1,marginBottom:10}},'Session History'),
       hist.slice().reverse().map(function(h,i){
         return ce('div',{key:i,style:{background:C.card,borderRadius:10,padding:'14px 16px',marginBottom:8}},
@@ -440,6 +593,9 @@ function WorkoutTracker(props) {
       }));
   }
 
+  // All-time PBs view
+  if(showPBs) return ce(AllTimePBs,{workouts:workouts,onClose:function(){setShowPBs(false);}});
+
   // Empty state
   if(!workouts.length) return ce('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'60vh',gap:16,color:C.muted,padding:20,textAlign:'center'}},
     ce('div',{style:{fontSize:52}},'🏋️'),
@@ -452,13 +608,19 @@ function WorkoutTracker(props) {
   var totalLbs=workouts.reduce(function(s,w){return s+wVol(w);},0);
   var thisWeek=sessionsThisWeek(workouts);
   var prCount=prsThisWeek(workouts);
+  var streak=calcStreak(workouts);
   var volData=workouts.map(function(w){return{label:w.label,volume:wVol(w)};});
 
   return ce('div',{style:{padding:20}},
-    // Top stats: Sessions | This Week | PRs | Lifted
+    // Top stats: Streak | This Week | PRs | Lifted
     ce('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-end',marginBottom:20}},
       ce('div',{style:{display:'flex',gap:14}},
-        [['Sessions',workouts.length,C.text],['This Week',thisWeek,C.text],['PRs 7 Days',prCount,prCount>0?'#f59e0b':C.muted],['Lifted',(totalLbs/1000).toFixed(1)+'k',C.text]].map(function(row){
+        [
+          ['Streak', streak>0?(streak+' wks 🔥'):('0 wks'), streak>0?C.accent:C.muted],
+          ['This Week',thisWeek,C.text],
+          ['PRs 7 Days',prCount>0?'🏆 '+prCount:'0',prCount>0?'#f59e0b':C.muted],
+          ['Lifted',(totalLbs/1000).toFixed(1)+'k',C.text]
+        ].map(function(row){
           var k=row[0],v=row[1],col=row[2];
           return ce('div',{key:k},
             ce('div',{style:{fontSize:20,fontWeight:700,color:col}},String(v)),
@@ -481,8 +643,12 @@ function WorkoutTracker(props) {
     // Trend stats
     ce(TrendStats,{workouts:workouts}),
 
-    // Exercise grid label
-    ce('div',{style:{fontSize:10,color:C.muted,textTransform:'uppercase',letterSpacing:1,marginBottom:10}},'Exercises — tap to view progression'),
+    // Exercise grid header + PBs button
+    ce('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}},
+      ce('div',{style:{fontSize:10,color:C.muted,textTransform:'uppercase',letterSpacing:1}},'Exercises — tap to view progression'),
+      ce('button',{onClick:function(){setShowPBs(true);},
+        style:{background:C.card2,border:'1px solid '+C.border,color:'#f59e0b',borderRadius:8,padding:'6px 12px',cursor:'pointer',fontSize:12,fontWeight:700,display:'flex',alignItems:'center',gap:5}},
+        '🏆 All-time PBs')),
 
     // Exercise grid with PR badges
     ce('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,paddingBottom:20}},
@@ -505,6 +671,8 @@ function WorkoutTracker(props) {
 // ── App ───────────────────────────────────────────────────
 function App() {
   var s1=useState('idle'),     syncStatus=s1[0],   setSyncStatus=s1[1];
+  var s1b=useState(0),         retryKey=s1b[0],    setRetryKey=s1b[1];
+  function handleRetry(){ setSyncStatus('loading'); setRetryKey(function(k){return k+1;}); }
   var s2=useState(function(){
     var c=localStorage.getItem('workout-auth-charlie')==='true';
     var j=localStorage.getItem('workout-auth-john')==='true';
@@ -540,7 +708,7 @@ function App() {
         ce('h1',{style:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:26,fontWeight:800,letterSpacing:1}},
           'WORKOUT ',ce('span',{style:{color:C.accent}},'TRACKER')),
         ce('div',{style:{display:'flex',alignItems:'center',gap:10}},
-          ce(SyncBadge,{status:syncStatus}),
+          ce(SyncBadge,{status:syncStatus,onRetry:syncStatus==='error'?handleRetry:null}),
           ce('button',{onClick:changeUser,style:{background:C.card2,border:'1px solid '+C.border,color:C.muted,borderRadius:8,padding:'6px 11px',cursor:'pointer',fontSize:12,fontWeight:600,whiteSpace:'nowrap'}},'Logout'))),
       // Tabs — dimmed and non-clickable while loading
       ce('div',{style:{display:'flex',gap:4}},
@@ -564,7 +732,7 @@ function App() {
 
     // Tab content
     auth[tab]
-      ?ce(WorkoutTracker,{key:tab,person:tab,onSync:setSyncStatus})
+      ?ce(WorkoutTracker,{key:tab,person:tab,onSync:setSyncStatus,retryKey:retryKey})
       :ce('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'60vh',gap:12,color:C.muted}},
           ce('span',{style:{fontSize:32}},'🔒'),
           ce('span',{style:{fontSize:14}},'Tap the tab above to unlock')));
