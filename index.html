@@ -46,6 +46,7 @@
     @keyframes ringDraw   { from { stroke-dashoffset: var(--c, 360); } }
     @keyframes shimmer    { 0% { background-position:-200% 0; } 100% { background-position:200% 0; } }
     @keyframes barGrow    { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+    @keyframes slideUp    { from { opacity:0; transform:translateY(40px); } to { opacity:1; transform:translateY(0); } }
 
     .chip-glow {
       position: relative;
@@ -282,10 +283,11 @@ function weeklyHistory(workouts, n) {
   });
   // build a continuous tail of the last N weeks ending at the current week
   var todayKey = isoWeekKey(new Date());
+  var todayMonday = mondayOfIsoKey(todayKey);  // compute once outside the loop
   var out = [];
   for(var i=n-1; i>=0; i--){
     // walk back i weeks from today
-    var ws = mondayOfIsoKey(todayKey);
+    var ws = new Date(todayMonday.getTime());
     ws.setDate(ws.getDate() - i*7);
     var k  = isoWeekKey(ws);
     var b  = bucket[k];
@@ -321,34 +323,18 @@ function prsThisWeek(workouts) {
 
 function calcStreak(workouts) {
   if(!workouts.length) return 0;
-  function isoWeek(ds) {
-    var d=new Date(ds+'T12:00:00');
-    var tmp=new Date(d);
-    tmp.setHours(0,0,0,0);
-    tmp.setDate(tmp.getDate()+4-(tmp.getDay()||7));
-    var yr=tmp.getFullYear();
-    var wk=Math.ceil((((tmp-new Date(yr,0,1))/86400000)+1)/7);
-    return yr+'-W'+(wk<10?'0':'')+wk;
-  }
+  // Reuse top-level isoWeekKey and mondayOfIsoKey (no duplicate implementations)
   var weekMap={};
   workouts.forEach(function(w){
-    var wk=isoWeek(w.date);
+    var wk=isoWeekKey(new Date(w.date+'T12:00:00'));
     weekMap[wk]=(weekMap[wk]||0)+1;
   });
   var qualWeeks=Object.keys(weekMap).filter(function(wk){return weekMap[wk]>=2;}).sort().reverse();
   if(!qualWeeks.length) return 0;
-  var now=isoWeek(new Date().toISOString().slice(0,10));
+  var now=isoWeekKey(new Date());
   var streak=0, expected=qualWeeks[0];
   function weeksBetween(a,b){
-    function mondayOf(yw){
-      var parts=yw.split('-W'), yr=parseInt(parts[0]), wk=parseInt(parts[1]);
-      var jan4=new Date(yr,0,4);
-      var ms=jan4.getTime()+(wk-1)*7*86400000;
-      var d=new Date(ms);
-      d.setDate(d.getDate()-((d.getDay()||7)-1));
-      return d;
-    }
-    return Math.round((mondayOf(a)-mondayOf(b))/(7*86400000));
+    return Math.round((mondayOfIsoKey(a)-mondayOfIsoKey(b))/(7*86400000));
   }
   if(weeksBetween(now,qualWeeks[0])>1) return 0;
   for(var i=0;i<qualWeeks.length;i++){
@@ -814,8 +800,7 @@ function buildRings(pbs, hit, vol, goals) {
 
 // 13,400 → "13.4k", 1234 → "1,234"
 function fmtKg(n){
-  if(n>=10000) return (n/1000).toFixed(1).replace(/\.0$/,'')+'k';
-  if(n>=1000)  return (n/1000).toFixed(1).replace(/\.0$/,'')+'k';
+  if(n>=1000) return (n/1000).toFixed(1).replace(/\.0$/,'')+'k';
   return String(Math.round(n));
 }
 
@@ -1079,22 +1064,41 @@ function WorkoutTracker(props) {
     setSessionIdx(null);
     onSync('loading');
     fetchBin(person).then(function(raw){
-      var clean=cleanBin(raw),seed=person==='charlie'?CHARLIE_SEED:[];
-      var ws = clean.workouts.length>0 ? clean.workouts : seed;
+      var clean=cleanBin(raw), seed=person==='charlie'?CHARLIE_SEED:[];
+      var ws = clean.workouts.length>0 ? clean.workouts : null;
+
+      // Bin was empty — check localStorage before falling back to seed
+      var recoveredFromLocal = false;
+      if(!ws){
+        try{
+          var ls=localStorage.getItem('wt-'+person);
+          var parsed=ls?JSON.parse(ls):null;
+          var local=cleanBin(parsed);
+          if(local.workouts.length>0){
+            ws=local.workouts;
+            recoveredFromLocal=true;
+            // Push localStorage data up to bin — do this BEFORE setting state
+            // so the save effect (guarded by loaded.current) doesn't race it
+            saveBin(person,{v:2,workouts:ws,goals:local.goals});
+          }
+        } catch(e){}
+      }
+
+      // Final fallback to seed (Charlie only), or empty
+      if(!ws) ws = seed.length>0 ? seed.slice() : [];
+
       setGoals(clean.goals);
       setWorkouts(ws);
-      // Mark loaded AFTER state setters so the save effect can fire on subsequent edits.
-      // Using a microtask so React commits before we flip the flag.
       Promise.resolve().then(function(){ loaded.current=true; });
       onSync('idle');
-      // Only seed-write to the bin if we actually have seed data to put there
-      // (prevents clobbering John's bin with an empty workouts array).
-      if(clean.workouts.length===0 && seed.length>0) saveBin(person,{v:2,workouts:seed,goals:clean.goals});
+      // Seed-write ONLY if bin was empty, localStorage had nothing, and seed exists.
+      // Guard with recoveredFromLocal to avoid overwriting the recovery save above.
+      if(clean.workouts.length===0 && seed.length>0 && !recoveredFromLocal) saveBin(person,{v:2,workouts:seed,goals:clean.goals});
     }).catch(function(){
       try{
         var s=localStorage.getItem('wt-'+person);
-        var parsed = s?JSON.parse(s):null;
-        var local = cleanBin(parsed);
+        var parsed=s?JSON.parse(s):null;
+        var local=cleanBin(parsed);
         setGoals(local.goals);
         setWorkouts(local.workouts.length>0 ? local.workouts : (person==='charlie'?CHARLIE_SEED:[]));
       }
@@ -1107,6 +1111,9 @@ function WorkoutTracker(props) {
   useEffect(function(){
     if(workouts===null) return;
     if(!loaded.current) return;   // initial load — don't echo back
+    // NEVER overwrite the bin with an empty array — this was causing data loss
+    // when the bin returned empty and the save effect fired before new data arrived
+    if(workouts.length===0) return;
     var payload = { v:2, workouts:workouts, goals:goals };
     try{ localStorage.setItem('wt-'+person,JSON.stringify(payload)); }catch(e){}
     onSync('saving');
