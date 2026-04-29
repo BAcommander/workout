@@ -367,13 +367,13 @@ function SessionDetail(props) {
       ),
       ce('div',{style:{textAlign:'right'}},
         ce('div',{style:{fontSize:20,fontWeight:700,color:C.accent}},total.toLocaleString()),
-        ce('div',{style:{fontSize:10,color:C.muted}},'lbs lifted'))),
+        ce('div',{style:{fontSize:10,color:C.muted}},'kg lifted'))),
     ce('div',null,w.exercises.map(function(ex,i){
       return ce('div',{key:i,style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 0',borderTop:'1px solid '+C.border}},
         ce('span',{style:{fontSize:12,color:C.text,flex:1}},ex.name),
         ce('div',{style:{display:'flex',gap:14,alignItems:'center'}},
           ce('span',{style:{fontSize:11,color:C.muted}},ex.sets.length+' sets'),
-          ce('span',{style:{fontSize:12,fontWeight:700,color:C.teal,minWidth:52,textAlign:'right'}},exMax(ex)>0?exMax(ex)+' lbs':'BW')));
+          ce('span',{style:{fontSize:12,fontWeight:700,color:C.teal,minWidth:52,textAlign:'right'}},exMax(ex)>0?exMax(ex)+' kg':'BW')));
     })));
 }
 
@@ -389,14 +389,14 @@ function TrendStats(props) {
   var avgEx=(workouts.reduce(function(s,w){return s+w.exercises.length;},0)/workouts.length).toFixed(1);
   var avgSets=Math.round(workouts.reduce(function(s,w){return s+wSets(w);},0)/workouts.length);
   var deltaCol=lastDelta===null?C.muted:lastDelta>0?C.teal:lastDelta<0?'#f87171':C.muted;
-  var deltaStr=lastDelta===null?'—':(lastDelta>0?'+':'')+(lastDelta/1000).toFixed(1)+'k lbs';
+  var deltaStr=lastDelta===null?'—':(lastDelta>0?'+':'')+(lastDelta/1000).toFixed(1)+'k';
   var deltaIcon=lastDelta===null?'':lastDelta>0?'▲ ':lastDelta<0?'▼ ':'';
   // Duration
   var withDuration=workouts.filter(function(w){return w.duration&&w.duration>0;});
   var avgDur=withDuration.length?Math.round(withDuration.reduce(function(s,w){return s+w.duration;},0)/withDuration.length):null;
   var stats=[
-    ['Avg Volume',     (avgVol/1000).toFixed(1)+'k lbs', null,    C.text],
-    ['Best Session',   (bestVol/1000).toFixed(1)+'k lbs',bestLbl, C.text],
+    ['Avg Volume',     (avgVol/1000).toFixed(1)+'k', null,    C.text],
+    ['Best Session',   (bestVol/1000).toFixed(1)+'k',bestLbl, C.text],
     ['vs Last',        deltaIcon+deltaStr,                null,    deltaCol],
     ['Avg Per Session',avgEx+' ex · '+avgSets+' sets',   null,    C.text],
   ];
@@ -459,7 +459,7 @@ function AllTimePBs(props) {
                 ce('div',{style:{fontSize:11,color:C.muted,marginTop:2}},pb.label+(isRecent?' · 🔥 This week':''))),
               // Weight
               ce('div',{style:{textAlign:'right'}},
-                ce('div',{style:{fontSize:18,fontWeight:700,color:isRecent?'#f59e0b':C.teal}},pb.weight+' lbs'),
+                ce('div',{style:{fontSize:18,fontWeight:700,color:isRecent?'#f59e0b':C.teal}},pb.weight+' kg'),
                 ce('div',{style:{fontSize:10,color:C.muted}},'best weight')));
           })));
 }
@@ -555,7 +555,7 @@ function WorkoutTracker(props) {
       ce('h2',{style:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:26,fontWeight:800,marginBottom:2}},selected),
       ce('p',{style:{color:C.muted,fontSize:13,marginBottom:20}},hist.length+' session'+(hist.length!==1?'s':'')+' logged'),
       ce('div',{style:{display:'flex',gap:10,marginBottom:20}},
-        [['Best',best>0?best+' lbs':'BW'],['Sessions',hist.length],['Total Reps',totalReps]].map(function(pair){
+        [['Best',best>0?best+' kg':'BW'],['Sessions',hist.length],['Total Reps',totalReps]].map(function(pair){
           return ce('div',{key:pair[0],style:{flex:1,background:C.card,borderRadius:10,padding:'12px 14px'}},
             ce('div',{style:{color:C.muted,fontSize:10,textTransform:'uppercase',letterSpacing:1,marginBottom:4}},pair[0]),
             ce('div',{style:{fontSize:20,fontWeight:700,color:C.accent}},String(pair[1])));
@@ -584,7 +584,7 @@ function WorkoutTracker(props) {
         return ce('div',{key:i,style:{background:C.card,borderRadius:10,padding:'14px 16px',marginBottom:8}},
           ce('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:8}},
             ce('span',{style:{fontWeight:600,fontSize:14}},h.label),
-            ce('span',{style:{color:C.accent,fontWeight:700,fontSize:14}},h.maxWeight>0?h.maxWeight+' lbs':'BW')),
+            ce('span',{style:{color:C.accent,fontWeight:700,fontSize:14}},h.maxWeight>0?h.maxWeight+' kg':'BW')),
           ce('div',{style:{display:'flex',gap:6,flexWrap:'wrap'}},
             h.sets.map(function(set,si){
               return ce('span',{key:si,style:{background:C.card2,borderRadius:6,padding:'4px 10px',fontSize:12,color:C.muted}},
@@ -631,7 +631,7 @@ function WorkoutTracker(props) {
     // Volume chart
     ce('div',{style:{background:C.card,borderRadius:sessionIdx!==null?'12px 12px 0 0':12,padding:'16px 8px 10px'}},
       ce('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'0 8px',marginBottom:12}},
-        ce('div',{style:{fontSize:10,color:C.muted,textTransform:'uppercase',letterSpacing:1}},'Session Volume (lbs)'),
+        ce('div',{style:{fontSize:10,color:C.muted,textTransform:'uppercase',letterSpacing:1}},'Session Volume (kg)'),
         ce('div',{style:{fontSize:11,color:sessionIdx!==null?C.teal:C.muted}},sessionIdx!==null?'Tap again to close':'Tap a bar for details')),
       ce(BarChart,{data:volData,selectedIdx:sessionIdx,onSelect:setSessionIdx})),
 
@@ -660,7 +660,7 @@ function WorkoutTracker(props) {
           pr?ce('span',{style:{position:'absolute',top:8,right:10,fontSize:13}},'🏆'):null,
           ce('div',{style:{fontSize:12,fontWeight:600,marginBottom:8,lineHeight:1.3,paddingRight:pr?20:0}},name),
           ce('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
-            ce('span',{style:{fontSize:17,fontWeight:700,color:delta>0?C.teal:C.text}},latest.maxWeight>0?latest.maxWeight+' lbs':'BW'),
+            ce('span',{style:{fontSize:17,fontWeight:700,color:delta>0?C.teal:C.text}},latest.maxWeight>0?latest.maxWeight+' kg':'BW'),
             ce('span',{style:{fontSize:12,fontWeight:600,color:pr?'#f59e0b':delta>0?C.teal:delta<0?'#f87171':C.muted}},
               pr?'NEW PR':delta===null?'1 session':delta>0?'▲ '+delta:delta<0?'▼ '+Math.abs(delta):'= same')));
       })),
