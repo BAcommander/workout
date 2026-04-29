@@ -390,7 +390,7 @@ function fetchWithTimeout(url,opts,ms){
 }
 function fetchBin(p,retries){
   retries=retries===undefined?1:retries;
-  return fetchWithTimeout(binUrl(p),{headers:bHdrs},5000)
+  return fetchWithTimeout(binUrl(p),{headers:bHdrs},8000)
     .then(function(r){if(!r.ok) throw new Error();return r.json();})
     .then(function(j){return j.record;})
     .catch(function(e){
@@ -1134,6 +1134,7 @@ function WorkoutTracker(props) {
   var s14=useState(null), expandedRing=s14[0], setExpandedRing=s14[1];   // null | 'pbs' | 'hit' | 'vol'
   var loaded=useRef(false);
   var s_msg=useState('Connecting…'), statusMsg=s_msg[0], setStatusMsg=s_msg[1];
+  var s_nf=useState(false), networkFailed=s_nf[0], setNetworkFailed=s_nf[1];
 
   // Listen for "open settings" from the App header
   useEffect(function(){
@@ -1147,11 +1148,12 @@ function WorkoutTracker(props) {
     setWorkouts(null);
     setSessionIdx(null);
     setStatusMsg('Connecting…');
+    setNetworkFailed(false);
     onSync('loading');
     // Retry-aware fetch: show 'Retrying…' if first attempt fails
     var attempt = 0;
     function doFetch(){
-      return fetchWithTimeout(binUrl(person),{headers:bHdrs},5000)
+      return fetchWithTimeout(binUrl(person),{headers:bHdrs},8000)
         .then(function(r){if(!r.ok) throw new Error();return r.json();})
         .then(function(j){return j.record;})
         .catch(function(e){
@@ -1195,6 +1197,7 @@ function WorkoutTracker(props) {
       // Guard with recoveredFromLocal to avoid overwriting the recovery save above.
       if(clean.workouts.length===0 && seed.length>0 && !recoveredFromLocal) saveBin(person,{v:2,workouts:seed,goals:clean.goals});
     }).catch(function(){
+      setNetworkFailed(true);
       setStatusMsg('Loading from cache…');
       try{
         var s=localStorage.getItem('wt-'+person);
@@ -1337,13 +1340,28 @@ function WorkoutTracker(props) {
 
   if(showPBs) return ce(AllTimePBs,{workouts:workouts,onClose:function(){setShowPBs(false);}});
 
-  // Empty state
-  if(!workouts.length) return ce('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'60vh',gap:16,color:C.muted,padding:20,textAlign:'center'}},
-    ce('div',{style:{fontSize:56,filter:'drop-shadow(0 4px 24px rgba(255,90,73,.3))'}},'🏋️'),
-    ce('div',{style:{fontSize:20,fontWeight:700,color:C.text,fontFamily:"'Barlow Condensed',sans-serif",letterSpacing:.5}},'NO WORKOUTS YET'),
-    ce('div',{style:{fontSize:14,maxWidth:260,color:C.textDim}},'Add your first session to start tracking progressive overload'),
-    ce('button',{className:'pill-btn',onClick:function(){setShowAdd(true);},style:{background:'linear-gradient(135deg,'+C.red+','+C.orange+')',color:'#fff',border:'none',borderRadius:12,padding:'12px 28px',cursor:'pointer',fontSize:14,fontWeight:700,marginTop:8,boxShadow:'0 8px 20px -8px '+C.orange,letterSpacing:.4}},'+ ADD FIRST WORKOUT'),
-    showAdd?ce(AddModal,mProps):null);
+  // Empty state — distinguish network failure from genuinely no data
+  if(!workouts.length) {
+    // Network failed and localStorage was empty — data likely exists in cloud
+    if(networkFailed) return ce('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'60vh',gap:16,padding:20,textAlign:'center',animation:'fadeIn .3s ease'}},
+      ce('div',{style:{fontSize:52,filter:'drop-shadow(0 4px 24px rgba(255,90,73,.3))'}},'⚠️'),
+      ce('div',{style:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:24,fontWeight:800,color:C.text,letterSpacing:.5}},'CONNECTION FAILED'),
+      ce('div',{style:{fontSize:14,color:C.textDim,maxWidth:280,lineHeight:1.5}},"Couldn’t reach the server. Your data is safe — tap retry to try again."),
+      ce('button',{className:'pill-btn',onClick:function(){props.onRetry&&props.onRetry();},style:{
+        background:'linear-gradient(135deg,'+C.red+','+C.orange+')',color:'#fff',
+        border:'none',borderRadius:12,padding:'13px 30px',cursor:'pointer',
+        fontSize:14,fontWeight:700,marginTop:4,
+        boxShadow:'0 8px 20px -8px '+C.orange,letterSpacing:.4
+      }},'Retry Connection'),
+      ce('div',{style:{fontSize:12,color:C.muted,marginTop:4}},'Check your connection and try again'));
+    // Genuinely no workouts yet
+    return ce('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'60vh',gap:16,color:C.muted,padding:20,textAlign:'center'}},
+      ce('div',{style:{fontSize:56,filter:'drop-shadow(0 4px 24px rgba(255,90,73,.3))'}},'🏋️'),
+      ce('div',{style:{fontSize:20,fontWeight:700,color:C.text,fontFamily:"'Barlow Condensed',sans-serif",letterSpacing:.5}},'NO WORKOUTS YET'),
+      ce('div',{style:{fontSize:14,maxWidth:260,color:C.textDim}},'Add your first session to start tracking progressive overload'),
+      ce('button',{className:'pill-btn',onClick:function(){setShowAdd(true);},style:{background:'linear-gradient(135deg,'+C.red+','+C.orange+')',color:'#fff',border:'none',borderRadius:12,padding:'12px 28px',cursor:'pointer',fontSize:14,fontWeight:700,marginTop:8,boxShadow:'0 8px 20px -8px '+C.orange,letterSpacing:.4}},'+ ADD FIRST WORKOUT'),
+      showAdd?ce(AddModal,mProps):null);
+  }
 
   // ── Dashboard ─────────────────────────────────────────────
   var totalLbs=workouts.reduce(function(s,w){return s+wVol(w);},0);
