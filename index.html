@@ -184,11 +184,121 @@ const wVol     = w  => w.exercises.reduce((s,ex)=>s+ex.sets.reduce((s2,set)=>s2+
 const exMax    = ex => { const ws=ex.sets.map(s=>s.weight).filter(w=>w>0); return ws.length?Math.max(...ws):0; };
 const exVol    = ex => ex.sets.reduce((s,set)=>s+set.reps*set.weight,0);
 const wSets    = w  => w.exercises.reduce((s,ex)=>s+ex.sets.length,0);
-const cleanBin = raw=> Array.isArray(raw)?raw.filter(x=>x&&typeof x==='object'&&x.date&&Array.isArray(x.exercises)):[];
+// Default per-user goals (weekly targets — Apple Fitness vibe)
+// Goals — PBs (lifetime PRs broken this week), Muscles Hit (distinct exercises this week),
+// Volume (kg lifted this week)
+const DEFAULT_GOALS = { pbs: 4, hit: 6, vol: 15000 };
+// Schema is backwards-compatible:
+//   v1 (legacy): [ ...workouts ]
+//   v2:         { v:2, workouts:[...], goals:{pbs,hit,vol} }
+function cleanBin(raw) {
+  // v2 object form
+  if (raw && typeof raw === 'object' && !Array.isArray(raw) && Array.isArray(raw.workouts)) {
+    var ws = raw.workouts.filter(function(x){return x&&typeof x==='object'&&x.date&&Array.isArray(x.exercises);});
+    var g  = (raw.goals && typeof raw.goals==='object') ? raw.goals : {};
+    return {
+      workouts: ws,
+      goals: {
+        pbs: Number(g.pbs)>0 ? Number(g.pbs) : DEFAULT_GOALS.pbs,
+        hit: Number(g.hit)>0 ? Number(g.hit) : DEFAULT_GOALS.hit,
+        vol: Number(g.vol)>0 ? Number(g.vol) : DEFAULT_GOALS.vol
+      }
+    };
+  }
+  // v1 legacy bare-array form
+  if (Array.isArray(raw)) {
+    return {
+      workouts: raw.filter(function(x){return x&&typeof x==='object'&&x.date&&Array.isArray(x.exercises);}),
+      goals: Object.assign({}, DEFAULT_GOALS)
+    };
+  }
+  return { workouts: [], goals: Object.assign({}, DEFAULT_GOALS) };
+}
 
 function sessionsThisWeek(workouts) {
   var cutoff=new Date(Date.now()-7*24*60*60*1000);
   return workouts.filter(function(w){ return new Date(w.date+'T12:00:00')>=cutoff; }).length;
+}
+// Distinct exercises trained in the last 7 days
+function hitsThisWeek(workouts) {
+  var cutoff=new Date(Date.now()-7*24*60*60*1000);
+  var set={};
+  workouts.forEach(function(w){
+    if(new Date(w.date+'T12:00:00')<cutoff) return;
+    w.exercises.forEach(function(e){ set[e.name]=1; });
+  });
+  return Object.keys(set).length;
+}
+// Total kg lifted in the last 7 days
+function volThisWeek(workouts) {
+  var cutoff=new Date(Date.now()-7*24*60*60*1000);
+  return workouts.reduce(function(s,w){
+    if(new Date(w.date+'T12:00:00')<cutoff) return s;
+    return s + wVol(w);
+  }, 0);
+}
+
+// ── ISO-week aggregation for the 12-week history strip ──
+// Returns array of {key, sessions, hits, prs, weekStart} for the most-recent N weeks
+// in chronological order (oldest first), filling gaps with zeros.
+function isoWeekKey(d) {
+  var tmp=new Date(d); tmp.setHours(0,0,0,0);
+  tmp.setDate(tmp.getDate()+4-(tmp.getDay()||7));
+  var yr=tmp.getFullYear();
+  var jan1=new Date(yr,0,1);
+  var wk=Math.ceil((((tmp-jan1)/86400000)+1)/7);
+  return yr+'-W'+(wk<10?'0':'')+wk;
+}
+function mondayOfIsoKey(yw) {
+  var parts=yw.split('-W'), yr=parseInt(parts[0]), wk=parseInt(parts[1]);
+  var jan4=new Date(yr,0,4);
+  var d=new Date(jan4.getTime()+(wk-1)*7*86400000);
+  d.setDate(d.getDate()-((d.getDay()||7)-1));
+  d.setHours(0,0,0,0);
+  return d;
+}
+function weeklyHistory(workouts, n) {
+  n = n || 12;
+  // bucket workouts by ISO week
+  var bucket = {};
+  var sorted = workouts.slice().sort(function(a,b){return a.date<b.date?-1:1;});
+  // pre-compute per-exercise running max so we can detect PRs in chronological order
+  var runningMax = {};
+  sorted.forEach(function(w){
+    var dt = new Date(w.date+'T12:00:00');
+    var key = isoWeekKey(dt);
+    if(!bucket[key]) bucket[key] = { key:key, sessions:0, exSet:{}, prs:0, vol:0, weekStart:mondayOfIsoKey(key) };
+    bucket[key].sessions++;
+    bucket[key].vol += wVol(w);
+    w.exercises.forEach(function(ex){
+      bucket[key].exSet[ex.name]=1;
+      var m = exMax(ex);
+      if(m>0){
+        var prev = runningMax[ex.name] || 0;
+        if(prev>0 && m>prev) bucket[key].prs++;
+        if(m>prev) runningMax[ex.name]=m;
+      }
+    });
+  });
+  // build a continuous tail of the last N weeks ending at the current week
+  var todayKey = isoWeekKey(new Date());
+  var out = [];
+  for(var i=n-1; i>=0; i--){
+    // walk back i weeks from today
+    var ws = mondayOfIsoKey(todayKey);
+    ws.setDate(ws.getDate() - i*7);
+    var k  = isoWeekKey(ws);
+    var b  = bucket[k];
+    out.push({
+      key: k,
+      weekStart: ws,
+      sessions: b ? b.sessions : 0,
+      hits:     b ? Object.keys(b.exSet).length : 0,
+      pbs:      b ? b.prs : 0,
+      vol:      b ? b.vol : 0
+    });
+  }
+  return out;
 }
 function prsThisWeek(workouts) {
   var cutoff=new Date(Date.now()-7*24*60*60*1000);
@@ -680,69 +790,267 @@ function AllTimePBs(props) {
           }))));
 }
 
-// ── ActivityRing — refined hero ring (sessions vs target) ──
-function ActivityRing(props) {
-  var sessions = props.sessions;       // sessions this week
-  var target   = props.target || 4;    // weekly target
-  var prCount  = props.prCount || 0;
-  var streak   = props.streak || 0;
+// Apple-Fitness-style palette tokens for the rings.
+// Each ring has `hue` (the dim track / lap color) and `pair` (the brighter
+// gradient endpoint that shows on the active sweep arc — and on overlap laps).
+const RING_PALETTE = {
+  pbs:    { hue: '#ff9f0a', pair: '#ffd60a' },   // warm orange → yellow (PBs / trophy)
+  hit:    { hue: '#30d158', pair: '#a3ff45' },   // Apple "Exercise" green → bright lime
+  vol:    { hue: '#ff2d55', pair: '#ff6482' }    // Apple "Move" red → pink
+};
 
-  var pct = Math.min(100, Math.round((sessions/target)*100));
-  var R = 56, CIRC = 2*Math.PI*R;
-  var off = CIRC * (1 - pct/100);
+// ── Build a normalized 3-ring spec used by both the hero and the history minis ──
+// Outer  = PBs    (lifetime PRs broken this week, orange/trophy)
+// Middle = Muscles Hit (distinct exercises this week, green/biceps)
+// Inner  = Volume (kg lifted this week, red/fire)
+function buildRings(pbs, hit, vol, goals) {
+  var p = RING_PALETTE;
+  return [
+    { key:'pbs', label:'PBs',          icon:'🏆', value:pbs, target:goals.pbs, hue:p.pbs.hue, pair:p.pbs.pair, unit:'PRs',         hint:'this week', formatVal:null },
+    { key:'hit', label:'MUSCLES HIT',  icon:'💪', value:hit, target:goals.hit, hue:p.hit.hue, pair:p.hit.pair, unit:'exercises',   hint:'this week', formatVal:null },
+    { key:'vol', label:'VOLUME',       icon:'🔥', value:vol, target:goals.vol, hue:p.vol.hue, pair:p.vol.pair, unit:'kg',          hint:'this week', formatVal:fmtKg }
+  ];
+}
 
-  // Color shifts based on completion
-  var ringHue = sessions>=target ? C.green : sessions>=Math.ceil(target/2) ? C.orange : C.red;
+// 13,400 → "13.4k", 1234 → "1,234"
+function fmtKg(n){
+  if(n>=10000) return (n/1000).toFixed(1).replace(/\.0$/,'')+'k';
+  if(n>=1000)  return (n/1000).toFixed(1).replace(/\.0$/,'')+'k';
+  return String(Math.round(n));
+}
 
-  return ce('div',{style:{display:'flex',alignItems:'center',gap:20}},
-    // Ring SVG
-    ce('div',{style:{position:'relative',width:130,height:130,flexShrink:0}},
-      ce('svg',{viewBox:'0 0 140 140',style:{width:'100%',height:'100%'},className:'ring-svg'},
-        ce('defs',null,
-          ce('linearGradient',{id:'ring-grad',x1:'0',y1:'0',x2:'1',y2:'1'},
-            ce('stop',{offset:'0%',stopColor:ringHue}),
-            ce('stop',{offset:'100%',stopColor:ringHue==C.green?C.cyan:ringHue==C.orange?C.red:C.pink}))),
-        ce('circle',{className:'ring-bg',cx:70,cy:70,r:R,fill:'none',stroke:ringHue,strokeWidth:11}),
-        ce('circle',{className:'ring-fg',style:{'--glow':ringHue+'80'},cx:70,cy:70,r:R,fill:'none',stroke:'url(#ring-grad)',strokeWidth:11,strokeDasharray:CIRC,strokeDashoffset:off})),
-      ce('div',{style:{position:'absolute',inset:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}},
-        ce('div',{style:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:36,fontWeight:800,lineHeight:1,color:C.text,letterSpacing:.5}},
-          sessions,ce('span',{style:{fontSize:18,color:C.muted,fontWeight:600}},'/'+target)),
-        ce('div',{style:{fontSize:9,color:C.muted,textTransform:'uppercase',letterSpacing:1.2,marginTop:3,fontWeight:700}},'this week'))),
+// Reusable concentric-rings SVG. `interactive` makes each ring tap-target.
+function ConcentricRings(props) {
+  var rings = props.rings;       // [{key,hue,pair,value,target},...] outer→inner
+  var size  = props.size  || 150;
+  var bandW = props.bandW || 11; // stroke width
+  var gap   = props.gap   || 4;  // gap between bands
+  var onTap = props.onTap;       // (key) => void  (optional)
+  var activeKey = props.activeKey;
+  var idPrefix = props.idPrefix || 'tr';
+  var cx = size/2, cy = size/2;
+  // outer radius shrinks for each subsequent ring
+  var rOuter = size/2 - bandW/2 - 2;
+  var radii = rings.map(function(_,i){ return rOuter - i*(bandW+gap); });
 
-    // Right side: streak + PR mini-stats
-    ce('div',{style:{display:'flex',flexDirection:'column',gap:10,flex:1,minWidth:0}},
-      // Streak chip
-      ce('div',{className:'chip-glow',style:{
-        '--glow': streak>0?C.red+'55':'transparent',
-        background:chipBg(streak>0?C.red:C.muted),
-        border:'1px solid '+(streak>0?C.red+'35':C.border),
-        borderRadius:12,padding:'10px 14px',
-        display:'flex',alignItems:'center',justifyContent:'space-between',gap:10
-      }},
-        ce('div',null,
-          ce('div',{style:{fontSize:9,color:C.muted,textTransform:'uppercase',letterSpacing:1,fontWeight:700,marginBottom:3}},'Streak'),
-          ce('div',{style:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:20,fontWeight:800,color:streak>0?C.red:C.textDim,letterSpacing:.3,lineHeight:1}},
-            streak,ce('span',{style:{fontSize:11,color:C.muted,marginLeft:3,fontWeight:600}},streak===1?'wk':'wks'))),
-        ce('span',{style:{fontSize:22,opacity:streak>0?1:.3}},'🔥')),
+  return ce('svg',{viewBox:'0 0 '+size+' '+size,style:{width:'100%',height:'100%',overflow:'visible'},className:'ring-svg'},
+    ce('defs',null,
+      rings.map(function(r,i){
+        return ce('linearGradient',{key:i,id:idPrefix+'-'+i,x1:'0',y1:'0',x2:'1',y2:'1'},
+          ce('stop',{offset:'0%',stopColor:r.hue}),
+          ce('stop',{offset:'100%',stopColor:r.pair||r.hue}));
+      })),
+    rings.map(function(r,i){
+      var rad  = radii[i];
+      var raw  = r.target>0 ? r.value/r.target : 0;
+      var circ = 2*Math.PI*rad;
+      var isActive = onTap && activeKey===r.key;
+      // Apple Fitness overflow: laps stack visually.
+      // - pct < 1: base loop hidden; partial arc sweeps to pct.
+      // - pct >= 1: base loop visible at full hue; overlap arc sweeps to (pct - floor(pct)).
+      var laps     = Math.floor(raw);
+      var fraction = raw - laps;
+      // If the user is exactly at 100%/200%/etc, render full loop, no overlap arc.
+      if (raw>0 && fraction===0) { laps -= 1; fraction = 1; }
+      var hasBase    = laps >= 1;                 // a fully-completed lap exists
+      var overlapPct = hasBase ? fraction : raw;  // arc on top of base (or alone if no base yet)
+      var overlapOff = circ * (1 - overlapPct);
+      // Apple's lap trick: same hue on the overlap, but a heavy inner drop-shadow
+      // on the leading edge so the new lap reads as physically stacking on top.
+      var baseGrad    = 'url(#'+idPrefix+'-'+i+')';   // hue → pair gradient sweep
+      var overlapStroke = baseGrad;                    // SAME color family — laps read by depth, not hue swap
 
-      // PRs chip
-      ce('div',{className:'chip-glow',style:{
-        '--glow': prCount>0?C.orange+'55':'transparent',
-        background:chipBg(prCount>0?C.orange:C.muted),
-        border:'1px solid '+(prCount>0?C.orange+'35':C.border),
-        borderRadius:12,padding:'10px 14px',
-        display:'flex',alignItems:'center',justifyContent:'space-between',gap:10
-      }},
-        ce('div',null,
-          ce('div',{style:{fontSize:9,color:C.muted,textTransform:'uppercase',letterSpacing:1,fontWeight:700,marginBottom:3}},'PRs · 7d'),
-          ce('div',{style:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:20,fontWeight:800,color:prCount>0?C.orange:C.textDim,letterSpacing:.3,lineHeight:1}},prCount)),
-        ce('span',{style:{fontSize:22,opacity:prCount>0?1:.3}},'🏆'))));
+      return ce(React.Fragment,{key:i},
+        // Hit-area: invisible thicker stroke captures taps for this band
+        onTap ? ce('circle',{
+          cx:cx,cy:cy,r:rad,fill:'none',
+          stroke:'rgba(0,0,0,0)',
+          strokeWidth:bandW+gap,
+          style:{cursor:'pointer'},
+          onClick:function(e){ e.stopPropagation(); onTap(r.key); }
+        }) : null,
+        // Dim track (always visible) — .ring-bg CSS rule sets opacity:.14
+        ce('circle',{className:'ring-bg',cx:cx,cy:cy,r:rad,fill:'none',stroke:r.hue,strokeWidth:bandW,style:{pointerEvents:'none'}}),
+        // Base completed loop (only when laps >= 1)
+        hasBase ? ce('circle',{cx:cx,cy:cy,r:rad,fill:'none',stroke:baseGrad,strokeWidth:bandW,strokeLinecap:'round',
+          style:{pointerEvents:'none', filter: isActive ? 'drop-shadow(0 0 8px '+r.hue+')' : null}}) : null,
+        // Active arc — partial sweep (pct<1) OR overflow remainder (pct>1)
+        overlapPct>0 ? ce('circle',{className:'ring-fg',cx:cx,cy:cy,r:rad,fill:'none',
+          stroke: overlapStroke,
+          strokeWidth: bandW,
+          strokeDasharray: circ,
+          strokeDashoffset: overlapOff,
+          transform: 'rotate(-90 '+cx+' '+cy+')',
+          strokeLinecap:'round',
+          style:{
+            '--glow':r.hue+(isActive?'cc':'70'),
+            // Stronger shadow on the lap-overlap so it reads as stacked.
+            filter: hasBase
+              ? 'drop-shadow(0 2px 4px rgba(0,0,0,0.7)) drop-shadow(0 0 6px '+r.hue+'aa)'
+              : (isActive ? 'drop-shadow(0 0 8px '+r.hue+')' : null),
+            pointerEvents:'none'
+          }}) : null
+      );
+    }));
+}
+
+// ── TripleRing — hero. Tap any ring to expand history below. ──
+function TripleRing(props) {
+  var pbs = props.pbs, hit = props.hit, vol = props.vol, goals = props.goals;
+  var activeKey = props.activeKey;        // currently expanded history key (or null)
+  var onToggle  = props.onToggle;         // (key) => void
+  var rings = buildRings(pbs, hit, vol, goals);
+  var size = 150;
+  return ce('div',{style:{display:'flex',alignItems:'center',gap:18}},
+    ce('div',{style:{position:'relative',width:size,height:size,flexShrink:0}},
+      ce(ConcentricRings,{rings:rings,size:size,bandW:13,gap:3,onTap:onToggle,activeKey:activeKey,idPrefix:'hero'})),
+    // Stat list (right column) — each row is also tap-to-expand
+    ce('div',{style:{display:'flex',flexDirection:'column',gap:8,flex:1,minWidth:0}},
+      rings.map(function(r){
+        var hitGoal = r.value >= r.target && r.target>0;
+        var isActive = activeKey===r.key;
+        return ce('button',{key:r.key,onClick:function(){onToggle(r.key);},style:{
+          textAlign:'left',cursor:'pointer',
+          display:'flex',alignItems:'center',gap:10,
+          padding:'8px 10px',borderRadius:10,
+          background:'linear-gradient(160deg,'+r.hue+(isActive?'28':'18')+' 0%,'+r.hue+'06 100%)',
+          border:'1px solid '+r.hue+(isActive?'88':hitGoal?'55':'22'),
+          boxShadow: isActive ? '0 0 0 2px '+r.hue+'33' : 'none',
+          transition:'background .15s, border-color .15s'
+        }},
+          ce('span',{style:{fontSize:18,opacity:hitGoal?1:.55,filter:hitGoal?'drop-shadow(0 0 6px '+r.hue+')':'none'}},r.icon),
+          ce('div',{style:{flex:1,minWidth:0}},
+            ce('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:6}},
+              ce('span',{style:{fontSize:9,color:r.hue,letterSpacing:1.4,fontWeight:800,textTransform:'uppercase'}},r.label),
+              ce('span',{style:{fontSize:9,color:C.muted,letterSpacing:.8,fontWeight:600,textTransform:'uppercase',whiteSpace:'nowrap'}},r.hint)),
+            ce('div',{style:{display:'flex',alignItems:'baseline',gap:4,marginTop:1}},
+              ce('span',{style:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:20,fontWeight:800,color:hitGoal?r.hue:C.text,letterSpacing:.3,lineHeight:1}}, r.formatVal ? r.formatVal(r.value) : r.value),
+              ce('span',{style:{fontSize:11,color:C.muted,fontWeight:600}},'/ '+(r.formatVal?r.formatVal(r.target):r.target)+' '+r.unit))),
+          ce('span',{style:{fontSize:11,color:isActive?r.hue:C.muted,fontWeight:700,marginLeft:4,transition:'transform .2s',display:'inline-block',transform:isActive?'rotate(180deg)':'rotate(0)'}},'⌄'));
+      })));
+}
+
+// ── HistoryRings — 12 mini concentric-ring sets (one per ISO week) ──
+// Reveals when the user taps any ring or stat row in the hero.
+function HistoryRings(props) {
+  var weeks = props.weeks;        // [{pbs,hits,vol,weekStart,key}]
+  var goals = props.goals;
+  var activeKey = props.activeKey;       // 'pbs' | 'hit' | 'vol'  — which band glows
+  // Count weeks where the active metric hit goal
+  var goalField = activeKey==='pbs'?'pbs':activeKey==='hit'?'hits':'vol';
+  var goalTarget = activeKey==='pbs'?goals.pbs:activeKey==='hit'?goals.hit:goals.vol;
+  var totalHit = weeks.filter(function(w){return w[goalField]>=goalTarget && goalTarget>0;}).length;
+  var activeHue = activeKey==='pbs'?RING_PALETTE.pbs.hue:activeKey==='hit'?RING_PALETTE.hit.hue:RING_PALETTE.vol.hue;
+  var activeLabel = activeKey==='pbs'?'PBs':activeKey==='hit'?'Muscles Hit':'Volume';
+
+  return ce('div',{style:{
+    background:'linear-gradient(160deg,'+C.surface2+' 0%,'+C.surface+' 100%)',
+    border:'1px solid '+C.border,
+    borderRadius:14,padding:'16px 14px 14px',marginBottom:14,
+    animation:'slideDown .25s ease'
+  }},
+    ce('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14,gap:10}},
+      ce('div',{style:{minWidth:0}},
+        ce('div',{style:{fontSize:9,color:C.muted,textTransform:'uppercase',letterSpacing:1.4,fontWeight:700}},'12-Week History'),
+        ce('div',{style:{fontSize:11,color:C.textDim,marginTop:2}},
+          ce('span',{style:{color:activeHue,fontWeight:700}},totalHit+' of 12'),' weeks hit ',activeLabel,' goal')),
+      ce('div',{style:{fontSize:9,color:C.muted,letterSpacing:.8,fontWeight:600,textTransform:'uppercase'}},
+        'Tap rings to switch')),
+    // 6 × 2 grid of mini ring sets (12 total)
+    ce('div',{style:{display:'grid',gridTemplateColumns:'repeat(6, 1fr)',gap:8}},
+      weeks.map(function(w,i){
+        var miniRings = buildRings(w.pbs, w.hits, w.vol, goals);
+        // dim the non-active rings
+        miniRings.forEach(function(r){
+          if(r.key!==activeKey){ r.hue = r.hue+'88'; r.pair = (r.pair||r.hue)+'88'; }
+        });
+        var isCurrent = i===weeks.length-1;
+        return ce('div',{key:w.key,style:{
+          display:'flex',flexDirection:'column',alignItems:'center',gap:4,
+          padding:'8px 4px',borderRadius:8,
+          background: isCurrent ? activeHue+'10' : 'transparent',
+          border: isCurrent ? '1px solid '+activeHue+'40' : '1px solid transparent'
+        }},
+          ce('div',{style:{width:'100%',aspectRatio:'1 / 1',position:'relative',maxWidth:54}},
+            ce(ConcentricRings,{rings:miniRings,size:54,bandW:6,gap:1.5,idPrefix:'h'+i})),
+          ce('div',{style:{
+            fontSize:9,color:isCurrent?activeHue:C.muted,fontWeight:isCurrent?800:600,letterSpacing:.3,lineHeight:1
+          }},
+            (w.weekStart.getMonth()+1)+'/'+w.weekStart.getDate()));
+      })),
+    // Legend
+    ce('div',{style:{display:'flex',justifyContent:'center',gap:14,marginTop:12,fontSize:9,color:C.muted,letterSpacing:.5,fontWeight:600,textTransform:'uppercase'}},
+      ['pbs','hit','vol'].map(function(k){
+        var hue = k==='pbs'?RING_PALETTE.pbs.hue:k==='hit'?RING_PALETTE.hit.hue:RING_PALETTE.vol.hue;
+        var lbl = k==='pbs'?'PBs':k==='hit'?'Muscles':'Volume';
+        var on = k===activeKey;
+        return ce('span',{key:k,style:{display:'inline-flex',alignItems:'center',gap:5,opacity:on?1:.5}},
+          ce('span',{style:{width:8,height:8,borderRadius:'50%',background:hue,boxShadow:on?'0 0 6px '+hue:'none'}}),
+          lbl);
+      })));
+}
+
+// ── SettingsSheet — edit per-user weekly goals ──
+function SettingsSheet(props) {
+  var goals = props.goals, onSave = props.onSave, onClose = props.onClose;
+  var s1=useState(String(goals.pbs)), pbs=s1[0], setPbs=s1[1];
+  var s2=useState(String(goals.hit)), h=s2[0],   setH=s2[1];
+  var s3=useState(String(goals.vol)), v=s3[0],   setV=s3[1];
+  function save(){
+    var ng = {
+      pbs: Math.max(1, parseInt(pbs)||DEFAULT_GOALS.pbs),
+      hit: Math.max(1, parseInt(h)  ||DEFAULT_GOALS.hit),
+      vol: Math.max(1, parseInt(v)  ||DEFAULT_GOALS.vol)
+    };
+    onSave(ng); onClose();
+  }
+  function reset(){
+    setPbs(String(DEFAULT_GOALS.pbs));
+    setH(String(DEFAULT_GOALS.hit));
+    setV(String(DEFAULT_GOALS.vol));
+  }
+  var rows = [
+    { key:'pbs', label:'PBs',         icon:'🏆', hue:RING_PALETTE.pbs.hue, unit:'PRs / week',         sub:'Lifetime personal records broken per week.',  val:pbs, set:setPbs, step:1    },
+    { key:'h',   label:'MUSCLES HIT', icon:'💪', hue:RING_PALETTE.hit.hue, unit:'exercises / week',   sub:'How many distinct exercises to hit per week.', val:h,   set:setH,   step:1    },
+    { key:'v',   label:'VOLUME',      icon:'🔥', hue:RING_PALETTE.vol.hue, unit:'kg / week',          sub:'Total weight lifted across all sets per week.',val:v,   set:setV,   step:500  }
+  ];
+  return ce('div',{style:{position:'fixed',inset:0,background:'rgba(0,0,0,0.78)',backdropFilter:'blur(4px)',display:'flex',alignItems:'flex-end',zIndex:100},
+    onClick:function(e){if(e.target===e.currentTarget) onClose();}},
+    ce('div',{style:{background:C.surface,borderRadius:'20px 20px 0 0',padding:'22px 20px 28px',width:'100%',maxWidth:620,margin:'0 auto',maxHeight:'92vh',overflowY:'auto',border:'1px solid '+C.border,borderBottom:'none',animation:'slideUp .3s ease'}},
+      ce('div',{style:{width:36,height:4,background:C.border,borderRadius:2,margin:'-6px auto 16px'}}),
+      ce('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}},
+        ce('h3',{style:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:24,fontWeight:800,letterSpacing:.5,lineHeight:1.1,margin:0}},'WEEKLY GOALS'),
+        ce('button',{onClick:onClose,style:{background:'transparent',border:'none',color:C.muted,fontSize:24,cursor:'pointer',padding:0,lineHeight:1}},'×')),
+      ce('p',{style:{color:C.textDim,fontSize:13,marginTop:8,marginBottom:18,lineHeight:1.4}},'Tune your three rings. Changes sync across devices.'),
+      rows.map(function(r){
+        return ce('div',{key:r.key,style:{
+          background:'linear-gradient(160deg,'+r.hue+'14 0%,'+r.hue+'04 100%)',
+          border:'1px solid '+r.hue+'30',
+          borderRadius:12,padding:'14px 14px',marginBottom:10
+        }},
+          ce('div',{style:{display:'flex',alignItems:'center',gap:10,marginBottom:4}},
+            ce('span',{style:{fontSize:20}},r.icon),
+            ce('span',{style:{fontSize:11,color:r.hue,fontWeight:800,letterSpacing:1.2}},r.label.toUpperCase()),
+            ce('span',{style:{flex:1,textAlign:'right',fontSize:10,color:C.muted,fontWeight:600,letterSpacing:.5,textTransform:'uppercase'}},r.unit)),
+          ce('div',{style:{fontSize:11.5,color:C.textDim,marginBottom:8,lineHeight:1.4}},r.sub),
+          ce('div',{style:{display:'flex',alignItems:'center',gap:8}},
+            ce('button',{onClick:function(){r.set(String(Math.max(r.step||1,(parseInt(r.val)||0)-(r.step||1))));},
+              style:{background:C.surface3,border:'1px solid '+C.border,color:C.text,borderRadius:8,width:36,height:36,cursor:'pointer',fontSize:18,fontWeight:700}},'−'),
+            ce('input',{type:'number',inputMode:'numeric',min:r.step||1,step:r.step||1,value:r.val,onChange:function(e){r.set(e.target.value);},
+              style:{flex:1,background:C.surface2,border:'1px solid '+r.hue+'40',borderRadius:8,padding:'9px 12px',color:r.hue,fontSize:20,fontWeight:800,fontFamily:"'Barlow Condensed',sans-serif",textAlign:'center',outline:'none',letterSpacing:.4}}),
+            ce('button',{onClick:function(){r.set(String((parseInt(r.val)||0)+(r.step||1)));},
+              style:{background:C.surface3,border:'1px solid '+C.border,color:C.text,borderRadius:8,width:36,height:36,cursor:'pointer',fontSize:18,fontWeight:700}},'+')));
+      }),
+      ce('div',{style:{display:'flex',gap:10,marginTop:14}},
+        ce('button',{onClick:reset,style:{flex:1,background:C.surface3,border:'1px solid '+C.border,color:C.textDim,borderRadius:12,padding:'13px',cursor:'pointer',fontSize:12,fontWeight:700,letterSpacing:.5}},'RESET TO DEFAULT'),
+        ce('button',{onClick:save,style:{flex:2,background:'linear-gradient(135deg,'+C.red+','+C.orange+')',border:'none',color:'#fff',borderRadius:12,padding:'13px',cursor:'pointer',fontSize:13,fontWeight:800,letterSpacing:.6,boxShadow:'0 6px 16px -6px '+C.orange}},'SAVE GOALS'))));
 }
 
 // ── WorkoutTracker ────────────────────────────────────────
 function WorkoutTracker(props) {
   var person=props.person,onSync=props.onSync;
   var s1 =useState(null),  workouts  =s1[0],  setWorkouts  =s1[1];
+  var sg =useState(Object.assign({},DEFAULT_GOALS)), goals=sg[0], setGoals=sg[1];
   var s2 =useState(null),  sessionIdx=s2[0],  setSessionIdx=s2[1];
   var s3 =useState(null),  selected  =s3[0],  setSelected  =s3[1];
   var s4 =useState('maxWeight'),metric=s4[0],  setMetric    =s4[1];
@@ -754,31 +1062,56 @@ function WorkoutTracker(props) {
   var s10=useState(''),    addError  =s10[0], setAddError  =s10[1];
   var s11=useState(false), addOk     =s11[0], setAddOk     =s11[1];
   var s12=useState(false), showPBs   =s12[0], setShowPBs   =s12[1];
-  var skipSave=useRef(true);
+  var s13=useState(false), showSettings=s13[0], setShowSettings=s13[1];
+  var s14=useState(null), expandedRing=s14[0], setExpandedRing=s14[1];   // null | 'pbs' | 'hit' | 'vol'
+  var loaded=useRef(false);
+
+  // Listen for "open settings" from the App header
+  useEffect(function(){
+    function open(){ setShowSettings(true); }
+    window.addEventListener('wt-open-settings', open);
+    return function(){ window.removeEventListener('wt-open-settings', open); };
+  },[]);
 
   useEffect(function(){
+    loaded.current=false;
     setWorkouts(null);
     setSessionIdx(null);
     onSync('loading');
     fetchBin(person).then(function(raw){
       var clean=cleanBin(raw),seed=person==='charlie'?CHARLIE_SEED:[];
-      var data=clean.length>0?clean:seed;
-      skipSave.current=true; setWorkouts(data); onSync('idle');
-      if(clean.length===0&&seed.length>0) saveBin(person,seed);
+      var ws = clean.workouts.length>0 ? clean.workouts : seed;
+      setGoals(clean.goals);
+      setWorkouts(ws);
+      // Mark loaded AFTER state setters so the save effect can fire on subsequent edits.
+      // Using a microtask so React commits before we flip the flag.
+      Promise.resolve().then(function(){ loaded.current=true; });
+      onSync('idle');
+      // Only seed-write to the bin if we actually have seed data to put there
+      // (prevents clobbering John's bin with an empty workouts array).
+      if(clean.workouts.length===0 && seed.length>0) saveBin(person,{v:2,workouts:seed,goals:clean.goals});
     }).catch(function(){
-      try{ var s=localStorage.getItem('wt-'+person); setWorkouts(s?JSON.parse(s):(person==='charlie'?CHARLIE_SEED:[])); }
+      try{
+        var s=localStorage.getItem('wt-'+person);
+        var parsed = s?JSON.parse(s):null;
+        var local = cleanBin(parsed);
+        setGoals(local.goals);
+        setWorkouts(local.workouts.length>0 ? local.workouts : (person==='charlie'?CHARLIE_SEED:[]));
+      }
       catch(e){ setWorkouts(person==='charlie'?CHARLIE_SEED:[]); }
+      Promise.resolve().then(function(){ loaded.current=true; });
       onSync('error');
     });
   },[person, props.retryKey]);
 
   useEffect(function(){
     if(workouts===null) return;
-    if(skipSave.current){ skipSave.current=false; return; }
-    try{ localStorage.setItem('wt-'+person,JSON.stringify(workouts)); }catch(e){}
+    if(!loaded.current) return;   // initial load — don't echo back
+    var payload = { v:2, workouts:workouts, goals:goals };
+    try{ localStorage.setItem('wt-'+person,JSON.stringify(payload)); }catch(e){}
     onSync('saving');
-    saveBin(person,workouts).then(function(){onSync('saved');setTimeout(function(){onSync('idle');},2500);}).catch(function(){onSync('error');});
-  },[workouts]);
+    saveBin(person,payload).then(function(){onSync('saved');setTimeout(function(){onSync('idle');},2500);}).catch(function(){onSync('error');});
+  },[workouts, goals]);
 
   function getHist(name){
     return (workouts||[]).filter(function(w){return w.exercises.some(function(e){return e.name===name;});}).map(function(w){
@@ -906,14 +1239,18 @@ function WorkoutTracker(props) {
 
   // ── Dashboard ─────────────────────────────────────────────
   var totalLbs=workouts.reduce(function(s,w){return s+wVol(w);},0);
-  var thisWeek=sessionsThisWeek(workouts);
-  var prCount=prsThisWeek(workouts);
-  var streak=calcStreak(workouts);
+  var pbsCount =prsThisWeek(workouts);            // lifetime PRs broken in last 7 days
+  var hitCount =hitsThisWeek(workouts);           // distinct exercises this week
+  var volCount =volThisWeek(workouts);            // total kg lifted this week
+  var weeks    =weeklyHistory(workouts,12);
   var volData=workouts.map(function(w){return{label:w.label,volume:wVol(w)};});
 
+  function toggleRing(key){ setExpandedRing(function(prev){ return prev===key?null:key; }); }
+
   return ce('div',{style:{padding:20}},
-    // ── Hero: Activity Ring + Streak/PR chips
+    // ── Hero: Triple-ring (PBs / Muscles Hit / Volume)
     ce('div',{style:{
+      position:'relative',
       background:'linear-gradient(160deg,'+C.surface2+' 0%,'+C.surface+' 100%)',
       border:'1px solid '+C.border,
       borderRadius:18,
@@ -921,7 +1258,10 @@ function WorkoutTracker(props) {
       marginBottom:14,
       boxShadow:'inset 0 1px 0 rgba(255,255,255,.04)'
     }},
-      ce(ActivityRing,{sessions:thisWeek,target:4,prCount:prCount,streak:streak})),
+      ce(TripleRing,{pbs:pbsCount,hit:hitCount,vol:volCount,goals:goals,activeKey:expandedRing,onToggle:toggleRing})),
+
+    // ── 12-week history rings (collapsed until a ring is tapped)
+    expandedRing ? ce(HistoryRings,{weeks:weeks,goals:goals,activeKey:expandedRing}) : null,
 
     // ── Lifted total (full-width chip) + Add button
     ce('div',{style:{display:'flex',gap:10,marginBottom:20}},
@@ -1022,7 +1362,8 @@ function WorkoutTracker(props) {
               pr?'NEW PR':delta===null?'1st':delta>0?'▲ '+delta:delta<0?'▼ '+Math.abs(delta):'= same')));
       })),
 
-    showAdd?ce(AddModal,mProps):null);
+    showAdd?ce(AddModal,mProps):null,
+    showSettings?ce(SettingsSheet,{goals:goals,onSave:function(ng){setGoals(ng);},onClose:function(){setShowSettings(false);}}):null);
 }
 
 // ── App ───────────────────────────────────────────────────
@@ -1071,8 +1412,13 @@ function App() {
       ce('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}},
         ce('h1',{style:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:26,fontWeight:800,letterSpacing:1.2}},
           'WORKOUT ',ce('span',{style:{background:'linear-gradient(135deg,'+C.red+','+C.orange+')',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}},'TRACKER')),
-        ce('div',{style:{display:'flex',alignItems:'center',gap:10}},
+        ce('div',{style:{display:'flex',alignItems:'center',gap:8}},
           ce(SyncBadge,{status:syncStatus,onRetry:syncStatus==='error'?handleRetry:null}),
+          auth[tab]?ce('button',{
+            onClick:function(){window.dispatchEvent(new CustomEvent('wt-open-settings'));},
+            title:'Edit weekly goals',
+            style:{background:C.surface3,border:'1px solid '+C.border,color:C.textDim,borderRadius:8,padding:'6px 10px',cursor:'pointer',fontSize:14,fontWeight:600,letterSpacing:.3,lineHeight:1}
+          },'⚙'):null,
           ce('button',{onClick:changeUser,style:{background:C.surface3,border:'1px solid '+C.border,color:C.textDim,borderRadius:8,padding:'6px 12px',cursor:'pointer',fontSize:11.5,fontWeight:600,whiteSpace:'nowrap',letterSpacing:.3}},'LOGOUT'))),
       // Tabs
       ce('div',{style:{display:'flex',gap:6}},
