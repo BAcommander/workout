@@ -653,7 +653,7 @@ function LineChart(props) {
 
 // ── SessionDetail ─────────────────────────────────────────
 function SessionDetail(props) {
-  var w=props.workout,total=wVol(w),sets=wSets(w);
+  var w=props.workout,total=wVol(w),sets=wSets(w),onDelete=props.onDelete;
   return ce('div',{style:{background:'linear-gradient(160deg,'+C.surface2+' 0%,'+C.surface+' 100%)',border:'1px solid '+C.cyan+'44',borderRadius:14,padding:18,marginTop:12,animation:'slideDown .25s ease',boxShadow:'inset 0 1px 0 '+C.cyan+'18'}},
     ce('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:14}},
       ce('div',null,
@@ -669,7 +669,13 @@ function SessionDetail(props) {
         ce('div',{style:{display:'flex',gap:14,alignItems:'center'}},
           ce('span',{style:{fontSize:11,color:C.muted}},ex.sets.length+' sets'),
           ce('span',{style:{fontSize:13,fontWeight:700,color:C.cyan,minWidth:54,textAlign:'right',fontFamily:"'Barlow Condensed',sans-serif",letterSpacing:.3}},exMax(ex)>0?exMax(ex)+' KG':'BW')));
-    })));
+    })),
+    onDelete?ce('div',{style:{borderTop:'1px solid '+C.border,marginTop:10,paddingTop:12,display:'flex',justifyContent:'flex-end'}},
+      ce('button',{onClick:function(){onDelete(w);},style:{
+        background:'transparent',border:'1px solid '+C.red+'55',color:C.red,
+        borderRadius:8,padding:'7px 14px',cursor:'pointer',fontSize:10.5,
+        fontWeight:700,letterSpacing:.6,textTransform:'uppercase'
+      }},'Delete Workout')):null);
 }
 
 // ── TrendStats (D3 chips) ─────────────────────────────────
@@ -1239,6 +1245,13 @@ function WorkoutTracker(props) {
     return latest>prevBest;
   }
 
+  function handleDelete(w){
+    var when=w.date+(w.label?' — '+w.label:'');
+    if(!window.confirm('Delete this workout?\n\n'+when+'\n\nThis cannot be undone.')) return;
+    setWorkouts(function(prev){ return prev.filter(function(x){return x.id!==w.id;}); });
+    setSessionIdx(null);
+  }
+
   function closeAdd(){ setShowAdd(false);setAddError('');setAddOk(false); }
   function handleAdd(){
     setAddError('');setAddOk(false);
@@ -1438,7 +1451,7 @@ function WorkoutTracker(props) {
         borderRadius:'0 0 14px 14px',
         padding:'0 14px 14px',
         marginBottom:18
-      }},ce(SessionDetail,{workout:workouts[sessionIdx]}))
+      }},ce(SessionDetail,{workout:workouts[sessionIdx],onDelete:handleDelete}))
       :ce('div',{style:{marginBottom:18}}),
 
     // Trend stats
