@@ -362,18 +362,36 @@ function getAllTimePBs(workouts) {
   });
 }
 
-// Best weight per exercise in the most recent session only,
-// flagged with whether it matches the all-time best for that exercise.
+// Most recent session (ties on date resolve to the later entry — deterministic).
+function lastSession(workouts) {
+  if(!workouts.length) return null;
+  return workouts.reduce(function(a,b){return b.date>=a.date?b:a;});
+}
+
+// Best weight per exercise in the most recent session only (deduped by name).
+// isAllTime = strictly beat the best from all EARLIER sessions;
+// isNew     = exercise never appeared in an earlier session.
 function getLastSessionPBs(workouts) {
-  if(!workouts.length) return [];
-  var last=workouts.slice().sort(function(a,b){return a.date<b.date?1:-1;})[0];
-  var allTime={};
-  getAllTimePBs(workouts).forEach(function(pb){ allTime[pb.name]=pb.weight; });
-  return last.exercises.map(function(ex){
-    var m=exMax(ex);
-    return {name:ex.name,weight:m,label:last.label,date:last.date,isAllTime:m>0&&m>=(allTime[ex.name]||0)};
-  }).filter(function(pb){return pb.weight>0;})
-    .sort(function(a,b){return b.weight-a.weight;});
+  var last=lastSession(workouts);
+  if(!last) return [];
+  var prevBest={};
+  workouts.forEach(function(w){
+    if(w===last) return;
+    w.exercises.forEach(function(ex){
+      var m=exMax(ex); if(m===0) return;
+      if(!prevBest[ex.name]||m>prevBest[ex.name]) prevBest[ex.name]=m;
+    });
+  });
+  var best={};
+  last.exercises.forEach(function(ex){
+    var m=exMax(ex); if(m===0) return;
+    if(!best[ex.name]||m>best[ex.name]) best[ex.name]=m;
+  });
+  return Object.keys(best).map(function(name){
+    var prev=prevBest[name];
+    return {name:name,weight:best[name],label:last.label,date:last.date,
+            isNew:prev===undefined,isAllTime:prev!==undefined&&best[name]>prev};
+  }).sort(function(a,b){return b.weight-a.weight;});
 }
 
 function autoLabel(ds) {
@@ -767,12 +785,24 @@ function AddModal(props) {
       ce('button',{className:'pill-btn',onClick:p.handleAdd,style:{width:'100%',background:'linear-gradient(135deg,'+C.red+','+C.orange+')',color:'#fff',border:'none',borderRadius:12,padding:14,fontSize:15,fontWeight:700,cursor:'pointer',boxShadow:'0 8px 24px -10px '+C.orange,letterSpacing:.3}},'Parse & Save Workout')));
 }
 
+// Shared style for the small PB pill buttons in the Exercises header
+function pbPillStyle(hue){
+  return {
+    background:chipBg(hue),
+    border:'1px solid '+hue+'40',
+    color:hue,borderRadius:10,
+    padding:'7px 13px',cursor:'pointer',fontSize:11.5,fontWeight:700,
+    display:'flex',alignItems:'center',gap:5,letterSpacing:.3
+  };
+}
+
 // ── AllTimePBs (also renders last-session mode) ───────────
 function AllTimePBs(props) {
   var isLast=props.mode==='last';
   var pbs=isLast?getLastSessionPBs(props.workouts):getAllTimePBs(props.workouts);
+  var lastW=isLast?lastSession(props.workouts):null;
   var sub=isLast
-    ? (pbs.length ? pbs[0].label+' · '+pbs.length+' exercises' : 'No sessions yet')
+    ? (lastW ? lastW.label+' · '+pbs.length+' exercises' : 'No sessions yet')
     : pbs.length+' exercises tracked';
   return ce('div',{style:{padding:'0 0 20px'}},
     // Sticky back bar
@@ -784,7 +814,9 @@ function AllTimePBs(props) {
       isLast?'LAST SESSION ':'ALL-TIME ',ce('span',{style:{background:'linear-gradient(135deg,'+C.orange+','+C.red+')',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}},'PBs')),
     ce('p',{style:{color:C.textDim,fontSize:13,marginBottom:22}},sub),
     !pbs.length
-      ?ce('div',{style:{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:14}},'No data yet — add some workouts first')
+      ?ce('div',{style:{textAlign:'center',padding:'40px 0',color:C.muted,fontSize:14}},
+          isLast&&lastW?'No weighted sets in your last session — bodyweight-only workouts don’t rank here'
+                       :'No data yet — add some workouts first')
       :ce('div',{style:{display:'flex',flexDirection:'column',gap:8,paddingBottom:20}},
           pbs.map(function(pb,i){
             var isRecent=new Date(pb.date)>=new Date(Date.now()-7*24*60*60*1000);
@@ -810,7 +842,8 @@ function AllTimePBs(props) {
                 ce('div',{style:{fontSize:11,color:C.muted,marginTop:3,display:'flex',alignItems:'center',gap:6}},
                   pb.label,
                   isLast
-                    ?(pb.isAllTime?ce('span',{style:{color:C.orange,fontWeight:700}},'· 🏆 All-time PB'):null)
+                    ?(pb.isAllTime?ce('span',{style:{color:C.orange,fontWeight:700}},'· 🏆 All-time PB')
+                      :pb.isNew?ce('span',{style:{color:C.cyan,fontWeight:700}},'· ✨ NEW'):null)
                     :(isRecent?ce('span',{style:{color:C.orange,fontWeight:700}},'· 🔥 This week'):null))),
               // Weight
               ce('div',{style:{textAlign:'right'}},
@@ -1159,6 +1192,7 @@ function WorkoutTracker(props) {
   var s12=useState(null),  showPBs   =s12[0], setShowPBs   =s12[1];   // null | 'all' | 'last'
   var s13=useState(false), showSettings=s13[0], setShowSettings=s13[1];
   var s14=useState(null), expandedRing=s14[0], setExpandedRing=s14[1];   // null | 'pbs' | 'hit' | 'vol'
+  var s15=useState(10),   chartRange=s15[0],   setChartRange=s15[1];     // 10 | 25 | 0 (= all)
   var loaded=useRef(false);
   var s_msg=useState('Connecting…'), statusMsg=s_msg[0], setStatusMsg=s_msg[1];
   var s_nf=useState(false), networkFailed=s_nf[0], setNetworkFailed=s_nf[1];
@@ -1403,7 +1437,16 @@ function WorkoutTracker(props) {
   var hitCount =hitsThisWeek(workouts);           // distinct exercises this week
   var volCount =volThisWeek(workouts);            // total kg lifted this week
   var weeks    =weeklyHistory(workouts,12);
-  var volData=workouts.map(function(w){return{label:w.label,volume:wVol(w)};});
+  // Windowed chart data: show only the last N sessions (0 = all).
+  // sessionIdx always indexes the FULL workouts array; chartOffset maps
+  // between chart-local bar indices and workout indices.
+  var chartOffset=chartRange?Math.max(0,workouts.length-chartRange):0;
+  var volData=workouts.slice(chartOffset).map(function(w){return{label:w.label,volume:wVol(w)};});
+  function pickRange(n){
+    setChartRange(n);
+    var off=n?Math.max(0,workouts.length-n):0;
+    if(sessionIdx!==null&&sessionIdx<off) setSessionIdx(null);  // selection fell outside the window
+  }
 
   function toggleRing(key){ setExpandedRing(function(prev){ return prev===key?null:key; }); }
 
@@ -1460,9 +1503,23 @@ function WorkoutTracker(props) {
         ce('div',null,
           ce('div',{style:{fontSize:9,color:C.muted,textTransform:'uppercase',letterSpacing:1.4,fontWeight:700}},'Session Volume'),
           ce('div',{style:{fontSize:11,color:C.textDim,marginTop:2}},'Kilograms moved per session')),
-        ce('div',{style:{fontSize:10,color:sessionIdx!==null?C.cyan:C.muted,fontWeight:600}},
-          sessionIdx!==null?'Tap again to close':'Tap a bar')),
-      ce(BarChart,{data:volData,selectedIdx:sessionIdx,onSelect:setSessionIdx})),
+        ce('div',{style:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:5}},
+          ce('div',{style:{display:'flex',gap:4}},
+            [[10,'10'],[25,'25'],[0,'ALL']].map(function(opt){
+              var n=opt[0],lbl=opt[1],active=chartRange===n;
+              return ce('button',{key:lbl,onClick:function(){pickRange(n);},style:{
+                background:active?chipBg(C.green):'transparent',
+                border:'1px solid '+(active?C.green+'50':C.border),
+                color:active?C.green:C.muted,
+                borderRadius:7,padding:'3px 9px',cursor:'pointer',
+                fontSize:10,fontWeight:700,letterSpacing:.5,lineHeight:1.4
+              }},lbl);
+            })),
+          ce('div',{style:{fontSize:10,color:sessionIdx!==null?C.cyan:C.muted,fontWeight:600}},
+            sessionIdx!==null?'Tap again to close':'Tap a bar'))),
+      ce(BarChart,{data:volData,
+        selectedIdx:sessionIdx!==null&&sessionIdx>=chartOffset?sessionIdx-chartOffset:null,
+        onSelect:function(i){setSessionIdx(i===null?null:i+chartOffset);}})),
 
     sessionIdx!==null
       ?ce('div',{style:{
@@ -1484,24 +1541,8 @@ function WorkoutTracker(props) {
         ce('div',{style:{fontSize:10,color:C.muted,textTransform:'uppercase',letterSpacing:1.4,fontWeight:700}},'Exercises'),
         ce('div',{style:{fontSize:11,color:C.textDim,marginTop:2}},'Tap to view progression')),
       ce('div',{style:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:6}},
-        ce('button',{className:'pill-btn',onClick:function(){setShowPBs('all');},
-          style:{
-            background:chipBg(C.orange),
-            border:'1px solid '+C.orange+'40',
-            color:C.orange,borderRadius:10,
-            padding:'7px 13px',cursor:'pointer',fontSize:11.5,fontWeight:700,
-            display:'flex',alignItems:'center',gap:5,letterSpacing:.3
-          }},
-          '🏆 ALL-TIME PBs'),
-        ce('button',{className:'pill-btn',onClick:function(){setShowPBs('last');},
-          style:{
-            background:chipBg(C.cyan),
-            border:'1px solid '+C.cyan+'40',
-            color:C.cyan,borderRadius:10,
-            padding:'7px 13px',cursor:'pointer',fontSize:11.5,fontWeight:700,
-            display:'flex',alignItems:'center',gap:5,letterSpacing:.3
-          }},
-          '⚡ LAST SESSION PBs'))),
+        ce('button',{className:'pill-btn',onClick:function(){setShowPBs('all');},style:pbPillStyle(C.orange)},'🏆 ALL-TIME PBs'),
+        ce('button',{className:'pill-btn',onClick:function(){setShowPBs('last');},style:pbPillStyle(C.cyan)},'⚡ LAST SESSION PBs'))),
 
     // Exercise grid with PR badges — each card colored by delta status
     ce('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,paddingBottom:20}},
