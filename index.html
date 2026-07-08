@@ -859,7 +859,11 @@ function AllTimePBs(props) {
                             pb.prevWeight!==null?ce('span',null,'· prev '+pb.prevWeight+' kg, '+autoLabel(pb.prevDate)):null)
                         :pb.isNew
                           ?ce('span',{style:{color:C.cyan,fontWeight:700}},'✨ NEW — first time logged')
-                          :ce('span',null,'PB '+pb.prevWeight+' kg · '+autoLabel(pb.prevDate)))
+                          :ce(React.Fragment,null,
+                              ce('span',null,'PB '+pb.prevWeight+' kg · '+autoLabel(pb.prevDate)),
+                              pb.weight<pb.prevWeight
+                                ?ce('span',{style:{color:'#f87171',fontWeight:700}},'· ▼ '+(Math.round((pb.prevWeight-pb.weight)*10)/10))
+                                :null))
                     :ce(React.Fragment,null,
                         pb.label,
                         isRecent?ce('span',{style:{color:C.orange,fontWeight:700}},'· 🔥 This week'):null))),
