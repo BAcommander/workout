@@ -374,12 +374,12 @@ function lastSession(workouts) {
 function getLastSessionPBs(workouts) {
   var last=lastSession(workouts);
   if(!last) return [];
-  var prevBest={};
+  var prevBest={};   // name → {weight,date} — >= keeps the most RECENT session the best was hit
   workouts.forEach(function(w){
     if(w===last) return;
     w.exercises.forEach(function(ex){
       var m=exMax(ex); if(m===0) return;
-      if(!prevBest[ex.name]||m>prevBest[ex.name]) prevBest[ex.name]=m;
+      if(!prevBest[ex.name]||m>=prevBest[ex.name].weight) prevBest[ex.name]={weight:m,date:w.date};
     });
   });
   var best={};
@@ -390,7 +390,8 @@ function getLastSessionPBs(workouts) {
   return Object.keys(best).map(function(name){
     var prev=prevBest[name];
     return {name:name,weight:best[name],label:last.label,date:last.date,
-            isNew:prev===undefined,isAllTime:prev!==undefined&&best[name]>prev};
+            isNew:prev===undefined,isAllTime:prev!==undefined&&best[name]>prev.weight,
+            prevWeight:prev?prev.weight:null,prevDate:prev?prev.date:null};
   }).sort(function(a,b){return b.weight-a.weight;});
 }
 
@@ -616,6 +617,16 @@ function BarChart(props) {
       showLabel?ce('text',{x:x+barW/2,y:H-6,textAnchor:'middle',fill:sel?C.cyan:C.muted,fontSize:9,fontWeight:sel?700:500},d.label.split(' ').slice(1,3).join(' ')):null);
   });
 
+  // Optional dashed moving-average line through the bar centers
+  var trendPath=null;
+  if(props.trend&&props.trend.length===data.length&&data.length>=3){
+    var tD=props.trend.map(function(v,i){
+      var x=pL+i*step+step/2, y=pT+plotH-(v/max)*plotH;
+      return (i===0?'M':'L')+' '+x.toFixed(1)+' '+y.toFixed(1);
+    }).join(' ');
+    trendPath=ce('path',{d:tD,fill:'none',stroke:C.cyan,strokeWidth:2,strokeLinecap:'round',strokeLinejoin:'round',strokeDasharray:'5 4',opacity:0.9});
+  }
+
   return ce('svg',{viewBox:'0 0 '+vW+' '+H,style:{width:'100%',height:H,display:'block'}},
     ce('defs',null,
       ce('linearGradient',{id:'bar-def',x1:'0',y1:'0',x2:'0',y2:'1'},
@@ -624,7 +635,7 @@ function BarChart(props) {
       ce('linearGradient',{id:'bar-sel',x1:'0',y1:'0',x2:'0',y2:'1'},
         ce('stop',{offset:'0%',stopColor:C.cyan,stopOpacity:1}),
         ce('stop',{offset:'100%',stopColor:C.cyan,stopOpacity:0.55}))),
-    grid,bars);
+    grid,bars,trendPath);
 }
 
 // ── LineChart ─────────────────────────────────────────────
@@ -798,6 +809,7 @@ function pbPillStyle(hue){
 
 // ── AllTimePBs (also renders last-session mode) ───────────
 function AllTimePBs(props) {
+  useEffect(function(){ window.scrollTo(0,0); },[]);   // opens at the top, not mid-page
   var isLast=props.mode==='last';
   var pbs=isLast?getLastSessionPBs(props.workouts):getAllTimePBs(props.workouts);
   var lastW=isLast?lastSession(props.workouts):null;
@@ -839,12 +851,18 @@ function AllTimePBs(props) {
               // Name + when
               ce('div',{style:{flex:1,minWidth:0}},
                 ce('div',{style:{fontSize:13.5,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},pb.name),
-                ce('div',{style:{fontSize:11,color:C.muted,marginTop:3,display:'flex',alignItems:'center',gap:6}},
-                  pb.label,
+                ce('div',{style:{fontSize:11,color:C.muted,marginTop:3,display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}},
                   isLast
-                    ?(pb.isAllTime?ce('span',{style:{color:C.orange,fontWeight:700}},'· 🏆 All-time PB')
-                      :pb.isNew?ce('span',{style:{color:C.cyan,fontWeight:700}},'· ✨ NEW'):null)
-                    :(isRecent?ce('span',{style:{color:C.orange,fontWeight:700}},'· 🔥 This week'):null))),
+                    ?(pb.isAllTime
+                        ?ce(React.Fragment,null,
+                            ce('span',{style:{color:C.orange,fontWeight:700}},'🏆 All-time PB'),
+                            pb.prevWeight!==null?ce('span',null,'· prev '+pb.prevWeight+' kg, '+autoLabel(pb.prevDate)):null)
+                        :pb.isNew
+                          ?ce('span',{style:{color:C.cyan,fontWeight:700}},'✨ NEW — first time logged')
+                          :ce('span',null,'PB '+pb.prevWeight+' kg · '+autoLabel(pb.prevDate)))
+                    :ce(React.Fragment,null,
+                        pb.label,
+                        isRecent?ce('span',{style:{color:C.orange,fontWeight:700}},'· 🔥 This week'):null))),
               // Weight
               ce('div',{style:{textAlign:'right'}},
                 ce('div',{style:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:22,fontWeight:800,color:hue,letterSpacing:.3,lineHeight:1}},pb.weight,ce('span',{style:{fontSize:11,color:C.muted,marginLeft:3}},'kg')),
@@ -1193,6 +1211,7 @@ function WorkoutTracker(props) {
   var s13=useState(false), showSettings=s13[0], setShowSettings=s13[1];
   var s14=useState(null), expandedRing=s14[0], setExpandedRing=s14[1];   // null | 'pbs' | 'hit' | 'vol'
   var s15=useState(10),   chartRange=s15[0],   setChartRange=s15[1];     // 10 | 25 | 0 (= all)
+  var s16=useState(false),showTrend=s16[0],    setShowTrend=s16[1];
   var loaded=useRef(false);
   var s_msg=useState('Connecting…'), statusMsg=s_msg[0], setStatusMsg=s_msg[1];
   var s_nf=useState(false), networkFailed=s_nf[0], setNetworkFailed=s_nf[1];
@@ -1442,6 +1461,11 @@ function WorkoutTracker(props) {
   // between chart-local bar indices and workout indices.
   var chartOffset=chartRange?Math.max(0,workouts.length-chartRange):0;
   var volData=workouts.slice(chartOffset).map(function(w){return{label:w.label,volume:wVol(w)};});
+  // Trailing 3-session moving average over the visible window (same as the progression chart)
+  var volTrend=showTrend?volData.map(function(_,i){
+    var slice=volData.slice(Math.max(0,i-2),i+1);
+    return slice.reduce(function(s,d){return s+d.volume;},0)/slice.length;
+  }):null;
   function pickRange(n){
     setChartRange(n);
     var off=n?Math.max(0,workouts.length-n):0;
@@ -1514,10 +1538,17 @@ function WorkoutTracker(props) {
                 borderRadius:7,padding:'3px 9px',cursor:'pointer',
                 fontSize:10,fontWeight:700,letterSpacing:.5,lineHeight:1.4
               }},lbl);
-            })),
+            }),
+            ce('button',{onClick:function(){setShowTrend(!showTrend);},style:{
+              background:showTrend?chipBg(C.cyan):'transparent',
+              border:'1px solid '+(showTrend?C.cyan+'50':C.border),
+              color:showTrend?C.cyan:C.muted,
+              borderRadius:7,padding:'3px 9px',cursor:'pointer',
+              fontSize:10,fontWeight:700,letterSpacing:.5,lineHeight:1.4,marginLeft:4
+            }},'〜 TREND')),
           ce('div',{style:{fontSize:10,color:sessionIdx!==null?C.cyan:C.muted,fontWeight:600}},
             sessionIdx!==null?'Tap again to close':'Tap a bar'))),
-      ce(BarChart,{data:volData,
+      ce(BarChart,{data:volData,trend:volTrend,
         selectedIdx:sessionIdx!==null&&sessionIdx>=chartOffset?sessionIdx-chartOffset:null,
         onSelect:function(i){setSessionIdx(i===null?null:i+chartOffset);}})),
 
