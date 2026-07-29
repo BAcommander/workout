@@ -1,6 +1,6 @@
 // Workout Tracker — per-installation config.
-// This file is gitignored: it holds your private JSONBin key and PINs.
-// To set up a fresh copy, duplicate config.example.js as config.js and fill it in.
+// Committed so GitHub Pages can serve the app. If you fork or copy this
+// repo, replace everything below with YOUR OWN values — see config.example.js.
 window.WT_CONFIG = {
   // JSONBin.io Access Key (jsonbin.io → API Keys)
   apiKey: '$2a$10$wcs2g43ed8qnSp0RIBmo9uG6fN6O5AtF7l/rqDbh22O0WOiH6p6OW',
