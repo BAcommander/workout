@@ -106,16 +106,18 @@
 </head>
 <body>
 <div id="root"></div>
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="config.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" integrity="sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" integrity="sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1" crossorigin="anonymous"></script>
 <script>
 'use strict';
 const { createElement: ce, useState, useEffect, useRef } = React;
 
-// ── CONFIG — change PINs before pushing to GitHub ─────────
-const PINS    = { john:'1234', charlie:'5678' };
-const API_KEY = '$2a$10$wcs2g43ed8qnSp0RIBmo9uG6fN6O5AtF7l/rqDbh22O0WOiH6p6OW';
-const BINS    = { john:'69f0b07baaba882197494ea1', charlie:'69f0b0ac856a6821898145b3' };
+// ── CONFIG — loaded from config.js (copy config.example.js to set up) ──
+var CFG     = window.WT_CONFIG;
+var USERS   = (CFG && Array.isArray(CFG.users)) ? CFG.users : [];
+var API_KEY = CFG ? CFG.apiKey : '';
+function userById(id){ return USERS.find(function(u){return u.id===id;}); }
 
 // ── Colour System (D3 — color-as-data) ────────────────────
 // Each metric gets a dedicated hue for instant scanability
@@ -179,6 +181,9 @@ const CHARLIE_SEED = [
     {name:'Reverse Cable Curl',    sets:[{reps:12,weight:15},{reps:10,weight:20},{reps:8, weight:20}]},
   ]},
 ];
+// Optional starter data per user id — applied only when that user's bin
+// AND localStorage are both empty. Users without an entry start blank.
+const SEEDS = { charlie: CHARLIE_SEED };
 
 // ── Helpers ───────────────────────────────────────────────
 const wVol     = w  => w.exercises.reduce((s,ex)=>s+ex.sets.reduce((s2,set)=>s2+set.reps*set.weight,0),0);
@@ -192,10 +197,17 @@ const DEFAULT_GOALS = { pbs: 4, hit: 6, vol: 15000 };
 // Schema is backwards-compatible:
 //   v1 (legacy): [ ...workouts ]
 //   v2:         { v:2, workouts:[...], goals:{pbs,hit,vol} }
+// Charts, "latest session" stats and delete-by-id all assume chronological
+// order and unique ids — enforce both on anything read from bin/localStorage.
+function normWorkouts(ws) {
+  ws.sort(function(a,b){return a.date<b.date?-1:a.date>b.date?1:0;});
+  ws.forEach(function(w,i){ if(!w.id) w.id='w-'+w.date+'-'+i; });
+  return ws;
+}
 function cleanBin(raw) {
   // v2 object form
   if (raw && typeof raw === 'object' && !Array.isArray(raw) && Array.isArray(raw.workouts)) {
-    var ws = raw.workouts.filter(function(x){return x&&typeof x==='object'&&x.date&&Array.isArray(x.exercises);});
+    var ws = normWorkouts(raw.workouts.filter(function(x){return x&&typeof x==='object'&&x.date&&Array.isArray(x.exercises);}));
     var g  = (raw.goals && typeof raw.goals==='object') ? raw.goals : {};
     return {
       workouts: ws,
@@ -209,17 +221,13 @@ function cleanBin(raw) {
   // v1 legacy bare-array form
   if (Array.isArray(raw)) {
     return {
-      workouts: raw.filter(function(x){return x&&typeof x==='object'&&x.date&&Array.isArray(x.exercises);}),
+      workouts: normWorkouts(raw.filter(function(x){return x&&typeof x==='object'&&x.date&&Array.isArray(x.exercises);})),
       goals: Object.assign({}, DEFAULT_GOALS)
     };
   }
   return { workouts: [], goals: Object.assign({}, DEFAULT_GOALS) };
 }
 
-function sessionsThisWeek(workouts) {
-  var cutoff=new Date(Date.now()-7*24*60*60*1000);
-  return workouts.filter(function(w){ return new Date(w.date+'T12:00:00')>=cutoff; }).length;
-}
 // Distinct exercises trained in the last 7 days
 function hitsThisWeek(workouts) {
   var cutoff=new Date(Date.now()-7*24*60*60*1000);
@@ -357,9 +365,7 @@ function getAllTimePBs(workouts) {
   });
   return Object.keys(pbMap).map(function(name){
     return {name:name,weight:pbMap[name].weight,label:pbMap[name].label,date:pbMap[name].date};
-  }).sort(function(a,b){
-    return b.date<a.date?-1:b.date>a.date?1:0;
-  });
+  }).sort(function(a,b){return b.weight-a.weight;});   // heaviest first — medals rank by weight
 }
 
 // Most recent session (ties on date resolve to the later entry — deterministic).
@@ -414,22 +420,12 @@ function parseWorkoutText(text) {
 
 // ── JSONBin ───────────────────────────────────────────────
 var bHdrs={'X-Access-Key':API_KEY};
-function binUrl(p){ return 'https://api.jsonbin.io/v3/b/'+BINS[p]; }
+function binUrl(p){ return 'https://api.jsonbin.io/v3/b/'+userById(p).bin; }
 function fetchWithTimeout(url,opts,ms){
   return new Promise(function(resolve,reject){
     var t=setTimeout(function(){reject(new Error('timeout'));},ms||7000);
     fetch(url,opts).then(function(r){clearTimeout(t);resolve(r);}).catch(function(e){clearTimeout(t);reject(e);});
   });
-}
-function fetchBin(p,retries){
-  retries=retries===undefined?1:retries;
-  return fetchWithTimeout(binUrl(p),{headers:bHdrs},8000)
-    .then(function(r){if(!r.ok) throw new Error();return r.json();})
-    .then(function(j){return j.record;})
-    .catch(function(e){
-      if(retries>0) return new Promise(function(res){setTimeout(res,2000);}).then(function(){return fetchBin(p,retries-1);});
-      throw e;
-    });
 }
 function saveBin(p,data){ return fetch(binUrl(p),{method:'PUT',headers:Object.assign({'Content-Type':'application/json'},bHdrs),body:JSON.stringify(data)}).then(function(r){ if(!r.ok) throw new Error(); }); }
 
@@ -444,18 +440,14 @@ function chipBg(hue){
 
 // ── UserPicker ────────────────────────────────────────────
 function UserPicker(props) {
-  var people=[
-    ['john','John','💪','Lift heavy, lift often', C.violet],
-    ['charlie','Charlie','🌟','Progressive overload queen', C.pink]
-  ];
   return ce('div',{style:{position:'fixed',inset:0,background:C.bg,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',zIndex:200,padding:24}},
     ce('div',{style:{fontSize:44,marginBottom:18,filter:'drop-shadow(0 4px 24px rgba(255,90,73,.4))'}},'🏋️'),
     ce('h1',{style:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:38,fontWeight:800,letterSpacing:1.5,marginBottom:8,textAlign:'center'}},
       'WORKOUT ',ce('span',{style:{background:'linear-gradient(135deg,'+C.red+','+C.orange+')',WebkitBackgroundClip:'text',WebkitTextFillColor:'transparent'}},'TRACKER')),
     ce('p',{style:{color:C.textDim,fontSize:15,marginBottom:44}},"Who's training today?"),
     ce('div',{style:{display:'flex',flexDirection:'column',gap:14,width:'100%',maxWidth:320}},
-      people.map(function(row){
-        var id=row[0],name=row[1],emoji=row[2],sub=row[3],hue=row[4];
+      USERS.map(function(u){
+        var id=u.id,name=u.name,emoji=u.emoji||'💪',sub=u.tagline||'',hue=u.hue||C.violet;
         return ce('button',{key:id,className:'pick-card',onClick:function(){props.onPick(id);},
           onMouseOver:function(e){e.currentTarget.style.borderColor=hue;e.currentTarget.style.boxShadow='0 12px 30px -10px '+hue+'60';},
           onMouseOut:function(e){e.currentTarget.style.borderColor=C.border;e.currentTarget.style.boxShadow='none';},
@@ -470,28 +462,29 @@ function UserPicker(props) {
 
 // ── PinModal ──────────────────────────────────────────────
 function PinModal(props) {
+  var user=userById(props.person);
   var s1=useState(''),  pin=s1[0],     setPin=s1[1];
   var s2=useState(''),  error=s2[0],   setError=s2[1];
   var s3=useState(true),remember=s3[0],setRemember=s3[1];
   var ref=useRef(null);
   useEffect(function(){ setTimeout(function(){ if(ref.current) ref.current.focus(); },120); },[]);
   function submit(){
-    if(pin===PINS[props.person]){
+    if(pin===user.pin){
       if(remember) localStorage.setItem('workout-auth-'+props.person,'true');
       props.onSuccess();
     } else { setError('Wrong PIN — try again'); setPin(''); if(ref.current) ref.current.focus(); }
   }
-  var hue=props.person==='john'?C.violet:C.pink;
+  var hue=user.hue||C.violet;
   return ce('div',{style:{position:'fixed',inset:0,background:C.bg,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',zIndex:200,padding:24}},
     ce('button',{onClick:props.onBack,className:'back-pill',style:{position:'absolute',top:20,left:20}},
       ce('span',{className:'arrow'},'←'),'BACK'),
     ce('div',{style:{background:'linear-gradient(160deg,'+C.surface2+' 0%,'+C.surface+' 100%)',border:'1px solid '+C.border,borderRadius:22,padding:'40px 30px',width:'100%',maxWidth:340,textAlign:'center',animation:'fadeIn .25s ease',boxShadow:'0 20px 60px -20px rgba(0,0,0,.5)'}},
       ce('div',{className:'chip-glow',style:{'--glow':hue+'80',width:60,height:60,background:chipBg(hue),border:'1px solid '+hue+'40',borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 20px',fontSize:24}},'🔒'),
       ce('h2',{style:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:28,fontWeight:800,marginBottom:6,letterSpacing:.5}},
-        (props.person==='john'?'John':'Charlie')+"'s ",ce('span',{style:{color:hue}},'Workouts')),
+        user.name+"'s ",ce('span',{style:{color:hue}},'Workouts')),
       ce('p',{style:{color:C.muted,fontSize:13,marginBottom:26}},'Enter your PIN to continue'),
       ce('input',{ref:ref,type:'password',inputMode:'numeric',maxLength:8,value:pin,
-        onInput:function(e){setPin(e.target.value);setError('');},
+        onChange:function(e){setPin(e.target.value);setError('');},
         onKeyDown:function(e){if(e.key==='Enter')submit();},
         placeholder:'••••',
         style:Object.assign({},iSt,{fontSize:24,textAlign:'center',letterSpacing:10,border:'2px solid '+(error?'#f87171':C.border),marginBottom:error?8:18,padding:'14px'})}),
@@ -536,8 +529,8 @@ function LoadingScreen(props) {
 
   var R=42, CIRC=2*Math.PI*R;
   var off=CIRC*(1-pct/100);
-  var person=props.person||'';
-  var personLabel=person==='john'?'John':person==='charlie'?'Charlie':'';
+  var pUser=props.person?userById(props.person):null;
+  var personLabel=pUser?pUser.name:'';
   var statusMsg=props.statusMsg||'Connecting…';
 
   return ce('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'60vh',gap:20,padding:20,animation:'fadeIn .3s ease'}},
@@ -595,8 +588,8 @@ function BarChart(props) {
   var vW=420,H=140,pL=42,pB=26,pT=14,pR=8,plotW=vW-pL-pR,plotH=H-pB-pT;
   var step=plotW/data.length,barW=Math.min(36,step*0.62);
 
-  // Smart label thinning: if >8 bars, show every other
-  var labelEvery = data.length>10 ? 2 : 1;
+  // Smart label thinning: cap at ~10 evenly spaced labels however many bars
+  var labelEvery = Math.max(1, Math.ceil(data.length/10));
 
   var grid=[0,Math.round(max*.5),max].reduce(function(acc,v){
     var y=pT+plotH-(v/max)*plotH;
@@ -609,7 +602,8 @@ function BarChart(props) {
     var x=pL+i*step+step/2-barW/2,bH=Math.max((d.volume/max)*plotH,3),y=pT+plotH-bH,sel=selectedIdx===i;
     var dimmed=selectedIdx!==null&&!sel;
     var grad=sel?'url(#bar-sel)':'url(#bar-def)';
-    var showLabel = i%labelEvery===0 || sel;
+    var isLastBar = i===data.length-1;
+    var showLabel = sel || isLastBar || (i%labelEvery===0 && data.length-1-i>=labelEvery/2);
     return ce('g',{key:i,style:{cursor:'pointer'},onClick:function(){onSelect(sel?null:i);}},
       ce('rect',{x:x,y:y,width:barW,height:bH,fill:grad,rx:5,opacity:dimmed?0.35:1,style:{transformOrigin:(x+barW/2)+'px '+(pT+plotH)+'px',animation:'barGrow .5s cubic-bezier(.2,.7,.2,1) backwards',animationDelay:(i*40)+'ms'}}),
       sel?ce('rect',{x:x-2,y:y-3,width:barW+4,height:bH+3,fill:'none',stroke:C.cyan,strokeWidth:1.5,rx:6,opacity:0.7}):null,
@@ -668,9 +662,14 @@ function LineChart(props) {
     return acc;
   },[]);
 
+  // Thin x-axis labels on long histories: ~8 evenly spaced, always the most
+  // recent, and drop the runner-up when it would crowd the last one.
+  var labelEvery=Math.max(1,Math.ceil(data.length/8));
   var dots=pts.reduce(function(acc,p,i){
-    acc.push(ce('circle',{key:'c'+i,cx:p.x,cy:p.y,r:4,fill:C.violet,stroke:C.surface,strokeWidth:1.5,filter:'drop-shadow(0 0 4px '+C.violet+'80)'}));
-    acc.push(ce('text',{key:'tl'+i,x:p.x,y:H-4,textAnchor:'middle',fill:C.muted,fontSize:9,fontWeight:500},p.name.split(' ').slice(1,3).join(' ')));
+    acc.push(ce('circle',{key:'c'+i,cx:p.x,cy:p.y,r:data.length>15?3:4,fill:C.violet,stroke:C.surface,strokeWidth:1.5,filter:'drop-shadow(0 0 4px '+C.violet+'80)'}));
+    var isLast=i===pts.length-1;
+    var showLabel=isLast||(i%labelEvery===0&&pts.length-1-i>=labelEvery/2);
+    if(showLabel) acc.push(ce('text',{key:'tl'+i,x:p.x,y:H-4,textAnchor:'middle',fill:isLast?C.textDim:C.muted,fontSize:9,fontWeight:isLast?700:500},p.name.split(' ').slice(1,3).join(' ')));
     return acc;
   },[]);
 
@@ -789,8 +788,9 @@ function AddModal(props) {
         onChange:function(e){p.setAddDuration(e.target.value);},style:Object.assign({},iSt,{marginBottom:14})}),
       ce('label',{style:lblSt},'Paste workout export'),
       ce('textarea',{placeholder:'Paste the workout text from your app here…',
+        value:p.addText,
         onChange:function(e){p.setAddText(e.target.value);},
-        style:Object.assign({},iSt,{height:150,resize:'vertical',fontFamily:'monospace',fontSize:12,marginBottom:20})},p.addText),
+        style:Object.assign({},iSt,{height:150,resize:'vertical',fontFamily:'monospace',fontSize:12,marginBottom:20})}),
       p.addError?ce('div',{style:{color:'#f87171',fontSize:13,marginBottom:12,padding:'10px 12px',background:'rgba(248,113,113,.1)',borderRadius:8,border:'1px solid rgba(248,113,113,.3)'}},p.addError):null,
       p.addOk   ?ce('div',{style:{color:C.green,fontSize:13,marginBottom:12,fontWeight:600,padding:'10px 12px',background:'rgba(52,211,153,.1)',borderRadius:8,border:'1px solid rgba(52,211,153,.3)'}},'✓ Saved to cloud!'):null,
       ce('button',{className:'pill-btn',onClick:p.handleAdd,style:{width:'100%',background:'linear-gradient(135deg,'+C.red+','+C.orange+')',color:'#fff',border:'none',borderRadius:12,padding:14,fontSize:15,fontWeight:700,cursor:'pointer',boxShadow:'0 8px 24px -10px '+C.orange,letterSpacing:.3}},'Parse & Save Workout')));
@@ -1216,7 +1216,10 @@ function WorkoutTracker(props) {
   var s14=useState(null), expandedRing=s14[0], setExpandedRing=s14[1];   // null | 'pbs' | 'hit' | 'vol'
   var s15=useState(10),   chartRange=s15[0],   setChartRange=s15[1];     // 10 | 25 | 0 (= all)
   var s16=useState(false),showTrend=s16[0],    setShowTrend=s16[1];
-  var loaded=useRef(false);
+  var s17=useState(10),   exRange=s17[0],      setExRange=s17[1];      // exercise chart: 10 | 25 | 0 (= all)
+  // Set by user edits (add / delete / goal change) — gates the save effect so
+  // loads never echo fetched data back to the bin.
+  var dirty=useRef(false);
   var s_msg=useState('Connecting…'), statusMsg=s_msg[0], setStatusMsg=s_msg[1];
   var s_nf=useState(false), networkFailed=s_nf[0], setNetworkFailed=s_nf[1];
 
@@ -1228,7 +1231,7 @@ function WorkoutTracker(props) {
   },[]);
 
   useEffect(function(){
-    loaded.current=false;
+    dirty.current=false;
     setWorkouts(null);
     setSessionIdx(null);
     setStatusMsg('Connecting…');
@@ -1250,8 +1253,9 @@ function WorkoutTracker(props) {
         });
     }
     doFetch().then(function(raw){
-      var clean=cleanBin(raw), seed=person==='charlie'?CHARLIE_SEED:[];
+      var clean=cleanBin(raw), seed=SEEDS[person]||[];
       var ws = clean.workouts.length>0 ? clean.workouts : null;
+      var goalsToUse = clean.goals;
 
       // Bin was empty — check localStorage before falling back to seed
       var recoveredFromLocal = false;
@@ -1262,9 +1266,8 @@ function WorkoutTracker(props) {
           var local=cleanBin(parsed);
           if(local.workouts.length>0){
             ws=local.workouts;
+            goalsToUse=local.goals;   // keep UI in sync with what we push to the bin
             recoveredFromLocal=true;
-            // Push localStorage data up to bin — do this BEFORE setting state
-            // so the save effect (guarded by loaded.current) doesn't race it
             saveBin(person,{v:2,workouts:ws,goals:local.goals});
           }
         } catch(e){}
@@ -1273,9 +1276,8 @@ function WorkoutTracker(props) {
       // Final fallback to seed (Charlie only), or empty
       if(!ws) ws = seed.length>0 ? seed.slice() : [];
 
-      setGoals(clean.goals);
+      setGoals(goalsToUse);
       setWorkouts(ws);
-      Promise.resolve().then(function(){ loaded.current=true; });
       onSync('idle');
       // Seed-write ONLY if bin was empty, localStorage had nothing, and seed exists.
       // Guard with recoveredFromLocal to avoid overwriting the recovery save above.
@@ -1288,20 +1290,19 @@ function WorkoutTracker(props) {
         var parsed=s?JSON.parse(s):null;
         var local=cleanBin(parsed);
         setGoals(local.goals);
-        setWorkouts(local.workouts.length>0 ? local.workouts : (person==='charlie'?CHARLIE_SEED:[]));
+        setWorkouts(local.workouts.length>0 ? local.workouts : (SEEDS[person]||[]));
       }
-      catch(e){ setWorkouts(person==='charlie'?CHARLIE_SEED:[]); }
-      Promise.resolve().then(function(){ loaded.current=true; });
+      catch(e){ setWorkouts(SEEDS[person]||[]); }
       onSync('error');
     });
   },[person, props.retryKey]);
 
   useEffect(function(){
     if(workouts===null) return;
-    if(!loaded.current) return;   // initial load — don't echo back
-    // NEVER overwrite the bin with an empty array — this was causing data loss
-    // when the bin returned empty and the save effect fired before new data arrived
-    if(workouts.length===0) return;
+    // Only user edits set dirty, so a load can never echo fetched (or empty)
+    // data back to the bin — while a deliberate delete-to-empty still syncs.
+    if(!dirty.current) return;
+    dirty.current=false;
     var payload = { v:2, workouts:workouts, goals:goals };
     try{ localStorage.setItem('wt-'+person,JSON.stringify(payload)); }catch(e){}
     onSync('saving');
@@ -1326,7 +1327,8 @@ function WorkoutTracker(props) {
   function handleDelete(w){
     var when=w.date+(w.label?' — '+w.label:'');
     if(!window.confirm('Delete this workout?\n\n'+when+'\n\nThis cannot be undone.')) return;
-    setWorkouts(function(prev){ return prev.filter(function(x){return x.id!==w.id;}); });
+    dirty.current=true;
+    setWorkouts(function(prev){ return prev.filter(function(x){return x!==w;}); });
     setSessionIdx(null);
   }
 
@@ -1340,6 +1342,7 @@ function WorkoutTracker(props) {
     var dur=addDuration?parseInt(addDuration):null;
     var nw={id:'w-'+addDate,date:addDate,label:addLabel||autoLabel(addDate),exercises:exercises};
     if(dur&&dur>0) nw.duration=dur;
+    dirty.current=true;
     setWorkouts(function(prev){ return prev.concat([nw]).sort(function(a,b){return a.date<b.date?-1:1;}); });
     setSessionIdx(null); setAddOk(true);
     setTimeout(function(){ closeAdd();setAddDate('');setAddLabel('');setAddDuration('');setAddText('');setAddOk(false); },900);
@@ -1354,9 +1357,16 @@ function WorkoutTracker(props) {
   // ── Exercise detail view
   if(selected){
     var hist=getHist(selected);
-    var chartData=hist.map(function(h){return{name:h.label,value:metric==='maxWeight'?h.maxWeight:h.volume};});
+    // Window the chart to the last N sessions (0 = all) — stats and the
+    // session history list below stay all-time
+    var visHist=exRange?hist.slice(-exRange):hist;
+    var chartData=visHist.map(function(h){return{name:h.label,value:metric==='maxWeight'?h.maxWeight:h.volume};});
     var best=Math.max.apply(null,hist.map(function(h){return h.maxWeight;}));
     var totalReps=hist.reduce(function(s,h){return s+h.sets.reduce(function(s2,set){return s2+set.reps;},0);},0);
+    // Best weight BEFORE each session (chronological) — lets set chips flag
+    // all-time PBs and increases vs the previous session
+    var priorBest=[], runBest=0;
+    for(var pi=0;pi<hist.length;pi++){ priorBest.push(runBest); runBest=Math.max(runBest,hist[pi].maxWeight); }
 
     var topStats=[
       ['Best',     best>0?best+' kg':'BW', C.orange],
@@ -1391,18 +1401,31 @@ function WorkoutTracker(props) {
 
       // Chart card
       ce('div',{style:{background:'linear-gradient(160deg,'+C.surface2+' 0%,'+C.surface+' 100%)',border:'1px solid '+C.border,borderRadius:14,padding:'16px 8px 12px',marginBottom:22}},
-        ce('div',{style:{display:'flex',gap:6,paddingLeft:8,marginBottom:14}},
-          ['maxWeight','volume'].map(function(m){
-            var active=metric===m;
-            return ce('button',{key:m,className:'pill-btn',onClick:function(){setMetric(m);},
-              style:{
-                background:active?'linear-gradient(135deg,'+C.red+','+C.orange+')':C.surface3,
-                color:active?'#fff':C.textDim,
-                border:'none',borderRadius:8,padding:'7px 14px',cursor:'pointer',fontSize:11,fontWeight:700,letterSpacing:.4,
-                boxShadow:active?'0 4px 12px -4px '+C.orange:'none'
-              }},
-              m==='maxWeight'?'MAX WEIGHT':'VOLUME');
-          })),
+        ce('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,flexWrap:'wrap',padding:'0 8px',marginBottom:14}},
+          ce('div',{style:{display:'flex',gap:6}},
+            ['maxWeight','volume'].map(function(m){
+              var active=metric===m;
+              return ce('button',{key:m,className:'pill-btn',onClick:function(){setMetric(m);},
+                style:{
+                  background:active?'linear-gradient(135deg,'+C.red+','+C.orange+')':C.surface3,
+                  color:active?'#fff':C.textDim,
+                  border:'none',borderRadius:8,padding:'7px 14px',cursor:'pointer',fontSize:11,fontWeight:700,letterSpacing:.4,
+                  boxShadow:active?'0 4px 12px -4px '+C.orange:'none'
+                }},
+                m==='maxWeight'?'MAX WEIGHT':'VOLUME');
+            })),
+          // Range pills — only worth showing once there's more than one window
+          hist.length>10?ce('div',{style:{display:'flex',gap:4}},
+            [[10,'10'],[25,'25'],[0,'ALL']].map(function(opt){
+              var n=opt[0],lbl=opt[1],active=exRange===n;
+              return ce('button',{key:lbl,onClick:function(){setExRange(n);},style:{
+                background:active?chipBg(C.violet):'transparent',
+                border:'1px solid '+(active?C.violet+'50':C.border),
+                color:active?C.violet:C.muted,
+                borderRadius:7,padding:'3px 9px',cursor:'pointer',
+                fontSize:10,fontWeight:700,letterSpacing:.5,lineHeight:1.4
+              }},lbl);
+            })):null),
         (function(){
           var vals=chartData.map(function(d){return d.value;});
           var W=3;
@@ -1415,16 +1438,32 @@ function WorkoutTracker(props) {
           return ce(LineChart,{data:chartData,trend:trend});
         })()),
 
-      ce('div',{style:{fontSize:10,color:C.muted,textTransform:'uppercase',letterSpacing:1.4,marginBottom:10,fontWeight:700}},'Session History'),
+      ce('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:10,gap:10,flexWrap:'wrap'}},
+        ce('div',{style:{fontSize:10,color:C.muted,textTransform:'uppercase',letterSpacing:1.4,fontWeight:700}},'Session History'),
+        ce('div',{style:{display:'flex',gap:12,fontSize:9.5,fontWeight:700,letterSpacing:.3}},
+          ce('span',{style:{color:C.orange}},'🏆 all-time PB'),
+          ce('span',{style:{color:C.green}},'▲ up vs prev session'))),
       hist.slice().reverse().map(function(h,i){
+        var orig=hist.length-1-i;                              // chronological index
+        var prevAll =priorBest[orig];                          // best before this session
+        var prevSess=orig>0?hist[orig-1].maxWeight:0;          // previous session's top set
         return ce('div',{key:i,style:{background:'linear-gradient(160deg,'+C.surface2+' 0%,'+C.surface+' 100%)',border:'1px solid '+C.border,borderRadius:12,padding:'14px 16px',marginBottom:8}},
           ce('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:8}},
             ce('span',{style:{fontWeight:600,fontSize:13.5}},h.label),
             ce('span',{style:{color:C.orange,fontWeight:800,fontSize:15,fontFamily:"'Barlow Condensed',sans-serif",letterSpacing:.3}},h.maxWeight>0?h.maxWeight+' KG':'BW')),
           ce('div',{style:{display:'flex',gap:6,flexWrap:'wrap'}},
             h.sets.map(function(set,si){
-              return ce('span',{key:si,style:{background:C.surface3,borderRadius:6,padding:'4px 10px',fontSize:11.5,color:C.textDim,fontWeight:500}},
-                set.reps+'×'+(set.weight>0?set.weight:'BW'));
+              var isPB=set.weight>0&&prevAll>0&&set.weight>prevAll;
+              var isUp=!isPB&&set.weight>0&&prevSess>0&&set.weight>prevSess;
+              var hue=isPB?C.orange:isUp?C.green:null;
+              return ce('span',{key:si,style:{
+                background:hue?chipBg(hue):C.surface3,
+                border:'1px solid '+(hue?hue+'55':'transparent'),
+                borderRadius:6,padding:'4px 10px',fontSize:11.5,
+                color:hue||C.textDim,fontWeight:hue?700:500,
+                boxShadow:isPB?'0 0 10px -2px '+C.orange+'80':'none'
+              }},
+                (isPB?'🏆 ':isUp?'▲ ':'')+set.reps+'×'+(set.weight>0?set.weight:'BW'));
             })));
       })));
   }
@@ -1609,7 +1648,7 @@ function WorkoutTracker(props) {
       })),
 
     showAdd?ce(AddModal,mProps):null,
-    showSettings?ce(SettingsSheet,{goals:goals,onSave:function(ng){setGoals(ng);},onClose:function(){setShowSettings(false);}}):null);
+    showSettings?ce(SettingsSheet,{goals:goals,onSave:function(ng){dirty.current=true;setGoals(ng);},onClose:function(){setShowSettings(false);}}):null);
 }
 
 // ── App ───────────────────────────────────────────────────
@@ -1617,18 +1656,22 @@ function App() {
   var s1=useState('idle'),     syncStatus=s1[0],   setSyncStatus=s1[1];
   var s1b=useState(0),         retryKey=s1b[0],    setRetryKey=s1b[1];
   function handleRetry(){ setSyncStatus('loading'); setRetryKey(function(k){return k+1;}); }
+  // Users remembered on this device ("Remember me" on the PIN screen)
+  function authedUsers(){
+    return USERS.filter(function(u){return localStorage.getItem('workout-auth-'+u.id)==='true';});
+  }
   var s2=useState(function(){
-    var c=localStorage.getItem('workout-auth-charlie')==='true';
-    var j=localStorage.getItem('workout-auth-john')==='true';
-    return (c&&!j)?'charlie':(j&&!c)?'john':null;
+    var a=authedUsers();
+    return a.length===1?a[0].id:null;    // exactly one remembered → skip the picker
   }), picked=s2[0], setPicked=s2[1];
   var s3=useState(function(){
-    var c=localStorage.getItem('workout-auth-charlie')==='true';
-    var j=localStorage.getItem('workout-auth-john')==='true';
-    return (c&&!j)?'charlie':(j&&!c)?'john':'charlie';
+    var a=authedUsers();
+    return a.length===1?a[0].id:USERS[0].id;
   }), tab=s3[0], setTab=s3[1];
   var s4=useState(function(){
-    return {john:localStorage.getItem('workout-auth-john')==='true',charlie:localStorage.getItem('workout-auth-charlie')==='true'};
+    var m={};
+    USERS.forEach(function(u){m[u.id]=localStorage.getItem('workout-auth-'+u.id)==='true';});
+    return m;
   }), auth=s4[0], setAuth=s4[1];
   var s5=useState(null), pinTarget=s5[0], setPinTarget=s5[1];
 
@@ -1668,8 +1711,8 @@ function App() {
           ce('button',{onClick:changeUser,style:{background:C.surface3,border:'1px solid '+C.border,color:C.textDim,borderRadius:8,padding:'6px 12px',cursor:'pointer',fontSize:11.5,fontWeight:600,whiteSpace:'nowrap',letterSpacing:.3}},'LOGOUT'))),
       // Tabs
       ce('div',{style:{display:'flex',gap:6}},
-        [['john','John',C.violet],['charlie','Charlie',C.pink]].map(function(pair){
-          var id=pair[0],label=pair[1],hue=pair[2],isActive=tab===id;
+        USERS.map(function(u){
+          var id=u.id,label=u.name,hue=u.hue||C.violet,isActive=tab===id;
           return ce('button',{key:id,
             onClick:function(){switchTab(id);},
             disabled:isLoading&&!isActive,
@@ -1696,7 +1739,20 @@ function App() {
           ce('span',{style:{fontSize:14}},'Tap the tab above to unlock')));
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(ce(App,null));
+// ── ConfigMissing — shown instead of the app when config.js isn't set up ──
+function ConfigMissing() {
+  var code={background:C.surface2,border:'1px solid '+C.border,borderRadius:6,padding:'2px 7px',fontFamily:'monospace',fontSize:12.5,color:C.cyan};
+  return ce('div',{style:{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:24,textAlign:'center'}},
+    ce('div',{style:{fontSize:44,marginBottom:16}},'⚙️'),
+    ce('h1',{style:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:30,fontWeight:800,letterSpacing:1,marginBottom:10}},'SETUP NEEDED'),
+    ce('div',{style:{color:C.textDim,fontSize:14,lineHeight:1.7,maxWidth:420}},
+      'No valid ',ce('span',{style:code},'config.js'),' found next to ',ce('span',{style:code},'index.html'),'.',
+      ce('br'),'Copy ',ce('span',{style:code},'config.example.js'),' to ',ce('span',{style:code},'config.js'),
+      ' and follow the instructions inside (free JSONBin account, ~5 minutes).'));
+}
+
+var configOk = CFG && USERS.length>0 && API_KEY && USERS.every(function(u){return u.id&&u.name&&u.bin;});
+ReactDOM.createRoot(document.getElementById('root')).render(ce(configOk?App:ConfigMissing,null));
 </script>
 </body>
 </html>
