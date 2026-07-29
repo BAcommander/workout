@@ -9,14 +9,15 @@ the cloud for free so it works across your phone and computer.
 
 ## Getting your own copy (~10 minutes)
 
-> ⚠️ **Do this first.** The `config.js` in this repo points at the original
-> owner's cloud storage. Until you replace it with your own, the app will
-> show — and overwrite — **someone else's workouts**. Don't skip step 3.
+> ⚠️ **Do this first.** The app won't work until you create your own
+> `config.js` (step 3). And if your copy came with a `config.js` already in
+> it, delete it — it points at someone else's cloud storage, and using it
+> would show (and overwrite) **their workouts**.
 
 ### 1. Get the files
 
-Click the green **Code** button on GitHub → **Download ZIP**, and unzip it
-somewhere (or fork the repo if you know git).
+If you were sent a ZIP, just unzip it somewhere. Otherwise, click the green
+**Code** button on GitHub → **Download ZIP** (or fork the repo if you know git).
 
 ### 2. Create your free cloud storage
 
@@ -34,7 +35,7 @@ The app stores data on [jsonbin.io](https://jsonbin.io) (free tier is plenty).
 
 ### 3. Set up config.js
 
-1. In your unzipped folder, **delete `config.js`**.
+1. If your folder has a `config.js` already, **delete it**.
 2. Copy `config.example.js` and rename the copy to `config.js`.
 3. Open it in any text editor and fill in:
    - `apiKey` — your Access Key from step 2.4
