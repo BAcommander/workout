@@ -429,6 +429,45 @@ function fetchWithTimeout(url,opts,ms){
 }
 function saveBin(p,data){ return fetch(binUrl(p),{method:'PUT',headers:Object.assign({'Content-Type':'application/json'},bHdrs),body:JSON.stringify(data)}).then(function(r){ if(!r.ok) throw new Error(); }); }
 
+// ── GitHub backup ─────────────────────────────────────────
+// After each save, the full history is committed to data/<person>.json in
+// this repo. The token lives only in this browser (per person), never in the repo.
+function ghRepo(){
+  if(CFG && CFG.githubRepo) return CFG.githubRepo;               // optional override, e.g. 'owner/repo'
+  var h=location.hostname.match(/^([^.]+)\.github\.io$/i);
+  var seg=location.pathname.split('/').filter(Boolean)[0];
+  return (h && seg) ? h[1]+'/'+seg : null;
+}
+function ghToken(p){ try{ return localStorage.getItem('wt-gh-token-'+p)||''; }catch(e){ return ''; } }
+function setGhToken(p,t){ try{ if(t) localStorage.setItem('wt-gh-token-'+p,t); else localStorage.removeItem('wt-gh-token-'+p); }catch(e){} }
+function b64utf8(str){ return btoa(unescape(encodeURIComponent(str))); }
+var ghBusy = Promise.resolve();                                   // serialise commits so SHAs never race
+function ghBackup(p,payload){
+  var token=ghToken(p), repo=ghRepo();
+  if(!token || !repo) return Promise.resolve('off');
+  var url='https://api.github.com/repos/'+repo+'/contents/data/'+p+'.json';
+  var hdrs={'Authorization':'Bearer '+token,'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};
+  var body=JSON.stringify(Object.assign({backedUp:new Date().toISOString()},payload),null,1);
+  var n=(payload.workouts||[]).length;
+  function attempt(retry){
+    return fetch(url+'?ref=main&t='+Date.now(),{headers:hdrs,cache:'no-store'})
+      .then(function(r){ if(r.status===404) return null; if(!r.ok) throw new Error('read '+r.status); return r.json(); })
+      .then(function(cur){
+        var put={message:'Backup '+p+': '+n+' sessions',content:b64utf8(body),branch:'main'};
+        if(cur && cur.sha) put.sha=cur.sha;
+        return fetch(url,{method:'PUT',headers:Object.assign({'Content-Type':'application/json'},hdrs),body:JSON.stringify(put)});
+      })
+      .then(function(r){
+        if(r.ok) return 'ok';
+        if((r.status===409||r.status===422) && !retry) return attempt(true);
+        if(r.status===401||r.status===403) throw new Error('token');
+        throw new Error('write '+r.status);
+      });
+  }
+  ghBusy = ghBusy.catch(function(){}).then(function(){ return attempt(false); });
+  return ghBusy;
+}
+
 // ── Shared styles ─────────────────────────────────────────
 var iSt  ={width:'100%',background:C.surface2,border:'1px solid '+C.border,borderRadius:10,padding:'12px 14px',color:C.text,fontSize:14,outline:'none',transition:'border-color .15s'};
 var lblSt={fontSize:10,color:C.muted,display:'block',marginBottom:7,textTransform:'uppercase',letterSpacing:'1px',fontWeight:600};
@@ -1154,6 +1193,19 @@ function SettingsSheet(props) {
     };
     onSave(ng); onClose();
   }
+  var s4=useState(ghToken(props.person)), tok=s4[0], setTok=s4[1];
+  var s5=useState(''), bkMsg=s5[0], setBkMsg=s5[1];
+  function backup(){
+    setGhToken(props.person, tok.trim());
+    if(!tok.trim()){ setBkMsg('Token removed. Backups are off on this device.'); return; }
+    if(!ghRepo()){ setBkMsg('Backups only work on the hosted GitHub Pages site.'); return; }
+    setBkMsg('Backing up…');
+    props.backupNow().then(function(r){
+      setBkMsg(r==='ok' ? 'Backed up. Future saves back up automatically.' : 'Backups are off.');
+    }).catch(function(e){
+      setBkMsg(e&&e.message==='token' ? 'GitHub rejected the token. Check it has Contents read and write on this repo.' : 'Backup failed. Check your connection and try again.');
+    });
+  }
   function reset(){
     setPbs(String(DEFAULT_GOALS.pbs));
     setH(String(DEFAULT_GOALS.hit));
@@ -1193,7 +1245,13 @@ function SettingsSheet(props) {
       }),
       ce('div',{style:{display:'flex',gap:10,marginTop:14}},
         ce('button',{onClick:reset,style:{flex:1,background:C.surface3,border:'1px solid '+C.border,color:C.textDim,borderRadius:12,padding:'13px',cursor:'pointer',fontSize:12,fontWeight:700,letterSpacing:.5}},'RESET TO DEFAULT'),
-        ce('button',{onClick:save,style:{flex:2,background:'linear-gradient(135deg,'+C.red+','+C.orange+')',border:'none',color:'#fff',borderRadius:12,padding:'13px',cursor:'pointer',fontSize:13,fontWeight:800,letterSpacing:.6,boxShadow:'0 6px 16px -6px '+C.orange}},'SAVE GOALS'))));
+        ce('button',{onClick:save,style:{flex:2,background:'linear-gradient(135deg,'+C.red+','+C.orange+')',border:'none',color:'#fff',borderRadius:12,padding:'13px',cursor:'pointer',fontSize:13,fontWeight:800,letterSpacing:.6,boxShadow:'0 6px 16px -6px '+C.orange}},'SAVE GOALS')),
+      ce('div',{style:{marginTop:22,paddingTop:18,borderTop:'1px solid '+C.border}},
+        ce('h3',{style:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:20,fontWeight:800,letterSpacing:.5,margin:0}},'GITHUB BACKUP'),
+        ce('p',{style:{color:C.textDim,fontSize:12.5,marginTop:6,marginBottom:12,lineHeight:1.45}},'Paste a GitHub token once and every save also writes your full history to data/'+props.person+'.json in the repo. The token stays in this browser only.'),
+        ce('input',{type:'password',autoComplete:'off',placeholder:'github_pat_…',value:tok,onChange:function(e){setTok(e.target.value);},style:Object.assign({},iSt,{marginBottom:10})}),
+        ce('button',{onClick:backup,style:{width:'100%',background:C.surface3,border:'1px solid '+C.borderHi,color:C.text,borderRadius:12,padding:'13px',cursor:'pointer',fontSize:13,fontWeight:800,letterSpacing:.6}},'SAVE TOKEN AND BACK UP NOW'),
+        bkMsg?ce('div',{role:'status',style:{marginTop:10,fontSize:12.5,color:C.textDim,lineHeight:1.4}},bkMsg):null)));
 }
 
 // ── WorkoutTracker ────────────────────────────────────────
@@ -1307,6 +1365,7 @@ function WorkoutTracker(props) {
     try{ localStorage.setItem('wt-'+person,JSON.stringify(payload)); }catch(e){}
     onSync('saving');
     saveBin(person,payload).then(function(){onSync('saved');setTimeout(function(){onSync('idle');},2500);}).catch(function(){onSync('error');});
+    ghBackup(person,payload).catch(function(e){ console.warn('GitHub backup failed:',e&&e.message); });
   },[workouts, goals]);
 
   function getHist(name){
@@ -1648,7 +1707,7 @@ function WorkoutTracker(props) {
       })),
 
     showAdd?ce(AddModal,mProps):null,
-    showSettings?ce(SettingsSheet,{goals:goals,onSave:function(ng){dirty.current=true;setGoals(ng);},onClose:function(){setShowSettings(false);}}):null);
+    showSettings?ce(SettingsSheet,{person:person,backupNow:function(){return ghBackup(person,{v:2,workouts:workouts||[],goals:goals});},goals:goals,onSave:function(ng){dirty.current=true;setGoals(ng);},onClose:function(){setShowSettings(false);}}):null);
 }
 
 // ── App ───────────────────────────────────────────────────
