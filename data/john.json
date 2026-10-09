@@ -1,5 +1,5 @@
 {
- "backedUp": "2026-10-04T22:36:03.931Z",
+ "backedUp": "2026-10-09T08:08:22.299Z",
  "v": 2,
  "workouts": [
   {
@@ -11888,6 +11888,321 @@
       {
        "reps": 5,
        "weight": 88
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "w-2026-10-08",
+   "date": "2026-10-08",
+   "label": "Thu 8 Oct",
+   "exercises": [
+    {
+     "name": "Bicep Curl",
+     "sets": [
+      {
+       "reps": 10,
+       "weight": 54
+      },
+      {
+       "reps": 10,
+       "weight": 56
+      },
+      {
+       "reps": 9,
+       "weight": 59
+      },
+      {
+       "reps": 9,
+       "weight": 56
+      }
+     ]
+    },
+    {
+     "name": "Inner Thigh",
+     "sets": [
+      {
+       "reps": 10,
+       "weight": 91
+      },
+      {
+       "reps": 10,
+       "weight": 91
+      },
+      {
+       "reps": 10,
+       "weight": 91
+      }
+     ]
+    },
+    {
+     "name": "Outer Thigh",
+     "sets": [
+      {
+       "reps": 16,
+       "weight": 93
+      },
+      {
+       "reps": 14,
+       "weight": 93
+      },
+      {
+       "reps": 12,
+       "weight": 93
+      }
+     ]
+    },
+    {
+     "name": "Bench Press",
+     "sets": [
+      {
+       "reps": 5,
+       "weight": 50
+      },
+      {
+       "reps": 10,
+       "weight": 55
+      },
+      {
+       "reps": 7,
+       "weight": 57.5
+      }
+     ]
+    },
+    {
+     "name": "Hammer Curl",
+     "sets": [
+      {
+       "reps": 10,
+       "weight": 35
+      },
+      {
+       "reps": 10,
+       "weight": 35
+      }
+     ]
+    },
+    {
+     "name": "Triceps Extension",
+     "sets": [
+      {
+       "reps": 10,
+       "weight": 46
+      },
+      {
+       "reps": 8,
+       "weight": 50
+      },
+      {
+       "reps": 6,
+       "weight": 50
+      },
+      {
+       "reps": 8,
+       "weight": 41
+      }
+     ]
+    },
+    {
+     "name": "Incline Bench Press",
+     "sets": [
+      {
+       "reps": 5,
+       "weight": 45
+      },
+      {
+       "reps": 7,
+       "weight": 45
+      },
+      {
+       "reps": 8,
+       "weight": 45
+      }
+     ]
+    },
+    {
+     "name": "Leg Extension",
+     "sets": [
+      {
+       "reps": 14,
+       "weight": 106
+      },
+      {
+       "reps": 14,
+       "weight": 106
+      }
+     ]
+    },
+    {
+     "name": "Leg Press",
+     "sets": [
+      {
+       "reps": 10,
+       "weight": 91
+      },
+      {
+       "reps": 10,
+       "weight": 96
+      }
+     ]
+    },
+    {
+     "name": "Leg Curl",
+     "sets": [
+      {
+       "reps": 11,
+       "weight": 91
+      },
+      {
+       "reps": 12,
+       "weight": 91
+      }
+     ]
+    },
+    {
+     "name": "Rear Delt Fly",
+     "sets": [
+      {
+       "reps": 12,
+       "weight": 56
+      },
+      {
+       "reps": 10,
+       "weight": 56
+      },
+      {
+       "reps": 8,
+       "weight": 54
+      },
+      {
+       "reps": 5,
+       "weight": 47
+      }
+     ]
+    },
+    {
+     "name": "Pec Fly",
+     "sets": [
+      {
+       "reps": 10,
+       "weight": 75
+      }
+     ]
+    },
+    {
+     "name": "Shoulder Press",
+     "sets": [
+      {
+       "reps": 8,
+       "weight": 59
+      },
+      {
+       "reps": 7,
+       "weight": 59
+      }
+     ]
+    },
+    {
+     "name": "Cable Cross Lateral Raise",
+     "sets": [
+      {
+       "reps": 13,
+       "weight": 11
+      },
+      {
+       "reps": 18,
+       "weight": 11
+      },
+      {
+       "reps": 15,
+       "weight": 11
+      }
+     ]
+    },
+    {
+     "name": "Pushdown",
+     "sets": [
+      {
+       "reps": 8,
+       "weight": 59
+      },
+      {
+       "reps": 8,
+       "weight": 55
+      },
+      {
+       "reps": 6,
+       "weight": 55
+      },
+      {
+       "reps": 5,
+       "weight": 50
+      }
+     ]
+    },
+    {
+     "name": "Reverse bicep",
+     "sets": [
+      {
+       "reps": 12,
+       "weight": 25
+      },
+      {
+       "reps": 16,
+       "weight": 25
+      }
+     ]
+    },
+    {
+     "name": "Lat Pulldown",
+     "sets": [
+      {
+       "reps": 10,
+       "weight": 85
+      },
+      {
+       "reps": 10,
+       "weight": 75
+      }
+     ]
+    },
+    {
+     "name": "Low row",
+     "sets": [
+      {
+       "reps": 10,
+       "weight": 74
+      },
+      {
+       "reps": 10,
+       "weight": 89
+      }
+     ]
+    },
+    {
+     "name": "Lateral Raise",
+     "sets": [
+      {
+       "reps": 20,
+       "weight": 9
+      },
+      {
+       "reps": 163,
+       "weight": 9
+      }
+     ]
+    },
+    {
+     "name": "Crunch",
+     "sets": [
+      {
+       "reps": 12,
+       "weight": 68
+      },
+      {
+       "reps": 8,
+       "weight": 70
       }
      ]
     }
