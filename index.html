@@ -411,7 +411,8 @@ function parseWorkoutText(text) {
     var block=blocks[i], nameEnd=block.indexOf('"');
     if(nameEnd===-1) continue;
     var name=block.substring(0,nameEnd).trim(), sets=[];
-    var re=/- (\d+)\s+reps\s+x\s+([\d.]+)/g, m;
+    // Set lines: older exports prefixed each with "- ", newer ones just indent
+    var re=/(?:^|\n|-)[ \t]*(\d+)\s+reps\s+x\s+([\d.]+)/g, m;
     while((m=re.exec(block))!==null) sets.push({reps:parseInt(m[1]),weight:parseFloat(m[2])});
     if(sets.length&&name) exercises.push({name:name,sets:sets});
   }
