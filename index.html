@@ -428,19 +428,62 @@ function fetchWithTimeout(url,opts,ms){
     fetch(url,opts).then(function(r){clearTimeout(t);resolve(r);}).catch(function(e){clearTimeout(t);reject(e);});
   });
 }
-function saveBin(p,data){ return fetch(binUrl(p),{method:'PUT',headers:Object.assign({'Content-Type':'application/json'},bHdrs),body:JSON.stringify(data)}).then(function(r){ if(!r.ok) throw new Error(); }); }
+// The GitHub token is kept in the person's bin (their profile) LOCKED with a
+// passphrase only they know (AES-GCM, key from PBKDF2). The bin is readable by
+// anyone with config.js, so the plain token never goes there. Every bin write
+// carries the locked copy along so it is never lost.
+var binLoaded={};                                                // person -> bin read OK this session
+var binEnc={};                                                   // person -> locked token from the profile
+function validEnc(e){ return !!(e && typeof e==='object' && typeof e.salt==='string' && typeof e.iv==='string' && typeof e.ct==='string'); }
+function saveBin(p,data){
+  // If this session hasn't read the bin yet (e.g. offline start), fetch the
+  // locked token first so a save can never drop it from the profile.
+  var pre = binLoaded[p] ? Promise.resolve() :
+    fetch(binUrl(p)+'/latest',{headers:bHdrs}).then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(j){ var e=j&&j.record&&j.record.ghTokenEnc; if(validEnc(e)) binEnc[p]=e; })
+      .catch(function(){});
+  return pre.then(function(){
+    var body=Object.assign({},data);
+    if(validEnc(binEnc[p])) body.ghTokenEnc=binEnc[p]; else delete body.ghTokenEnc;
+    return fetch(binUrl(p),{method:'PUT',headers:Object.assign({'Content-Type':'application/json'},bHdrs),body:JSON.stringify(body)});
+  }).then(function(r){ if(!r.ok) throw new Error(); });
+}
+
+// -- Token lock (passphrase) ----------------------------------
+var TOK_ITER=600000;
+function bytesToB64(b){ var s=''; for(var i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return btoa(s); }
+function b64ToBytes(str){ var bin=atob(str), b=new Uint8Array(bin.length); for(var i=0;i<bin.length;i++) b[i]=bin.charCodeAt(i); return b; }
+function cryptoOk(){ return !!(window.crypto && crypto.subtle); }
+function tokKey(pass,salt,iter){
+  return crypto.subtle.importKey('raw',new TextEncoder().encode(pass),'PBKDF2',false,['deriveKey'])
+    .then(function(k){ return crypto.subtle.deriveKey({name:'PBKDF2',salt:salt,iterations:iter,hash:'SHA-256'},k,{name:'AES-GCM',length:256},false,['encrypt','decrypt']); });
+}
+function lockToken(tok,pass){
+  var salt=crypto.getRandomValues(new Uint8Array(16)), iv=crypto.getRandomValues(new Uint8Array(12));
+  return tokKey(pass,salt,TOK_ITER)
+    .then(function(k){ return crypto.subtle.encrypt({name:'AES-GCM',iv:iv},k,new TextEncoder().encode(tok)); })
+    .then(function(ct){ return {v:1,iter:TOK_ITER,salt:bytesToB64(salt),iv:bytesToB64(iv),ct:bytesToB64(new Uint8Array(ct))}; });
+}
+function unlockToken(enc,pass){                                  // rejects on a wrong passphrase
+  return tokKey(pass,b64ToBytes(enc.salt),Number(enc.iter)||TOK_ITER)
+    .then(function(k){ return crypto.subtle.decrypt({name:'AES-GCM',iv:b64ToBytes(enc.iv)},k,b64ToBytes(enc.ct)); })
+    .then(function(pt){ return new TextDecoder().decode(pt); });
+}
+function backupLocked(p){ return validEnc(binEnc[p]) && !ghToken(p); }
 
 // ── GitHub backup ─────────────────────────────────────────
 // After each save, the full history is committed to data/<person>.json in
-// this repo. The token lives only in this browser (per person), never in the repo.
+// this repo. The token is cached in this browser and kept locked in the
+// person's bin (see saveBin), never in the repo.
 function ghRepo(){
   if(CFG && CFG.githubRepo) return CFG.githubRepo;               // optional override, e.g. 'owner/repo'
   var h=location.hostname.match(/^([^.]+)\.github\.io$/i);
   var seg=location.pathname.split('/').filter(Boolean)[0];
   return (h && seg) ? h[1]+'/'+seg : null;
 }
-function ghToken(p){ try{ return localStorage.getItem('wt-gh-token-'+p)||''; }catch(e){ return ''; } }
-function setGhToken(p,t){ try{ if(t) localStorage.setItem('wt-gh-token-'+p,t); else localStorage.removeItem('wt-gh-token-'+p); }catch(e){} }
+var ghTok={};                                                    // person -> token in memory
+function ghToken(p){ var t=''; try{ t=localStorage.getItem('wt-gh-token-'+p)||''; }catch(e){} return t||ghTok[p]||''; }
+function setGhToken(p,t){ ghTok[p]=t||''; try{ if(t) localStorage.setItem('wt-gh-token-'+p,t); else localStorage.removeItem('wt-gh-token-'+p); }catch(e){} }
 function b64utf8(str){ return btoa(unescape(encodeURIComponent(str))); }
 var ghBusy = Promise.resolve();                                   // serialise commits so SHAs never race
 function ghBackup(p,payload){
@@ -1196,16 +1239,46 @@ function SettingsSheet(props) {
   }
   var s4=useState(ghToken(props.person)), tok=s4[0], setTok=s4[1];
   var s5=useState(''), bkMsg=s5[0], setBkMsg=s5[1];
-  function backup(){
-    setGhToken(props.person, tok.trim());
-    if(!tok.trim()){ setBkMsg('Token removed. Backups are off on this device.'); return; }
-    if(!ghRepo()){ setBkMsg('Backups only work on the hosted GitHub Pages site.'); return; }
-    setBkMsg('Backing up…');
-    props.backupNow().then(function(r){
-      setBkMsg(r==='ok' ? 'Backed up. Future saves back up automatically.' : 'Backups are off.');
-    }).catch(function(e){
-      setBkMsg(e&&e.message==='token' ? 'GitHub rejected the token. Check it has Contents read and write on this repo.' : 'Backup failed. Check your connection and try again.');
+  var s6=useState(''), pass=s6[0], setPass=s6[1];
+  var s7=useState(backupLocked(props.person)), locked=s7[0], setLockedHere=s7[1];
+  var s8=useState(false), busy=s8[0], setBusy=s8[1];
+  function runBackup(){
+    if(!ghRepo()) return Promise.resolve('Backups run on the hosted GitHub Pages site.');
+    return props.backupNow().then(function(r){
+      return r==='ok' ? 'Backed up. Future saves back up automatically.' : 'Backups are off.';
+    },function(e){
+      return e&&e.message==='token' ? 'GitHub rejected the token. Check it has Contents read and write on this repo.' : 'Backup failed. Check your connection and try again.';
     });
+  }
+  function done(msg){ setBusy(false); setBkMsg(msg); setLockedHere(backupLocked(props.person)); props.onLockChange(); }
+  function unlock(){
+    if(!pass){ setBkMsg('Type your backup passphrase.'); return; }
+    if(!cryptoOk()){ setBkMsg('This browser cannot unlock the token. Open the hosted site over https.'); return; }
+    setBusy(true); setBkMsg('Unlocking…');
+    unlockToken(binEnc[props.person],pass).then(function(t){
+      setGhToken(props.person,t); setTok(t); setPass('');
+      setBkMsg('Unlocked. Backing up…');
+      return runBackup().then(function(m){ done('Unlocked. '+m); });
+    },function(){ done('Wrong passphrase. Try again.'); });
+  }
+  function backup(){
+    var t=tok.trim();
+    if(!t){
+      setGhToken(props.person,''); delete binEnc[props.person];
+      setBusy(true); setBkMsg('Removing…');
+      props.saveProfile().then(function(){ done('Token removed from your profile and this device. Backups are off.'); },
+        function(){ done('Removed from this device, but your profile could not be updated. Try again when online.'); });
+      return;
+    }
+    if(pass.length<8){ setBkMsg('Choose a passphrase of at least 8 characters. A few random words works well.'); return; }
+    if(!cryptoOk()){ setBkMsg('This browser cannot lock the token. Open the hosted site over https.'); return; }
+    setBusy(true); setBkMsg('Locking and saving to your profile…');
+    lockToken(t,pass).then(function(enc){
+      setGhToken(props.person,t); binEnc[props.person]=enc; setPass('');
+      return props.saveProfile().then(function(){ return 'Token saved to your profile. '; },function(){ return 'Saved on this device, but your profile could not be updated. Try again when online. '; });
+    }).then(function(prefix){
+      return runBackup().then(function(m){ done(prefix+m); });
+    }).catch(function(){ done('Could not lock the token. Try again.'); });
   }
   function reset(){
     setPbs(String(DEFAULT_GOALS.pbs));
@@ -1249,9 +1322,17 @@ function SettingsSheet(props) {
         ce('button',{onClick:save,style:{flex:2,background:'linear-gradient(135deg,'+C.red+','+C.orange+')',border:'none',color:'#fff',borderRadius:12,padding:'13px',cursor:'pointer',fontSize:13,fontWeight:800,letterSpacing:.6,boxShadow:'0 6px 16px -6px '+C.orange}},'SAVE GOALS')),
       ce('div',{style:{marginTop:22,paddingTop:18,borderTop:'1px solid '+C.border}},
         ce('h3',{style:{fontFamily:"'Barlow Condensed',sans-serif",fontSize:20,fontWeight:800,letterSpacing:.5,margin:0}},'GITHUB BACKUP'),
-        ce('p',{style:{color:C.textDim,fontSize:12.5,marginTop:6,marginBottom:12,lineHeight:1.45}},'Paste a GitHub token once and every save also writes your full history to data/'+props.person+'.json in the repo. The token stays in this browser only.'),
-        ce('input',{type:'password',autoComplete:'off',placeholder:'github_pat_…',value:tok,onChange:function(e){setTok(e.target.value);},style:Object.assign({},iSt,{marginBottom:10})}),
-        ce('button',{onClick:backup,style:{width:'100%',background:C.surface3,border:'1px solid '+C.borderHi,color:C.text,borderRadius:12,padding:'13px',cursor:'pointer',fontSize:13,fontWeight:800,letterSpacing:.6}},'SAVE TOKEN AND BACK UP NOW'),
+        locked ? [
+          ce('p',{key:'lp',style:{color:C.textDim,fontSize:12.5,marginTop:6,marginBottom:12,lineHeight:1.45}},'Your token is saved in your profile, but this device has forgotten it. Type your backup passphrase to unlock it here.'),
+          ce('input',{key:'li',type:'password',autoComplete:'current-password',placeholder:'Backup passphrase',value:pass,onChange:function(e){setPass(e.target.value);},onKeyDown:function(e){if(e.key==='Enter') unlock();},style:Object.assign({},iSt,{marginBottom:10})}),
+          ce('button',{key:'lb',onClick:unlock,disabled:busy,style:{width:'100%',background:C.surface3,border:'1px solid '+C.borderHi,color:C.text,borderRadius:12,padding:'13px',cursor:'pointer',fontSize:13,fontWeight:800,letterSpacing:.6,opacity:busy?.6:1}},'UNLOCK BACKUPS'),
+          ce('button',{key:'lr',onClick:function(){setLockedHere(false);setBkMsg('');},style:{width:'100%',background:'transparent',border:'none',color:C.muted,padding:'10px',cursor:'pointer',fontSize:12}},'Use a new token instead')
+        ] : [
+          ce('p',{key:'np',style:{color:C.textDim,fontSize:12.5,marginTop:6,marginBottom:12,lineHeight:1.45}},'Paste a GitHub token once and every save also writes your full history to data/'+props.person+'.json in the repo. The token is saved in your profile, locked with a passphrase. If this device forgets it, you only type the passphrase.'),
+          ce('input',{key:'nt',type:'password',autoComplete:'off',placeholder:'github_pat_…',value:tok,onChange:function(e){setTok(e.target.value);},style:Object.assign({},iSt,{marginBottom:10})}),
+          tok.trim()?ce('input',{key:'npw',type:'password',autoComplete:'new-password',placeholder:'Backup passphrase (8+ characters)',value:pass,onChange:function(e){setPass(e.target.value);},style:Object.assign({},iSt,{marginBottom:10})}):null,
+          ce('button',{key:'nb',onClick:backup,disabled:busy,style:{width:'100%',background:C.surface3,border:'1px solid '+C.borderHi,color:C.text,borderRadius:12,padding:'13px',cursor:'pointer',fontSize:13,fontWeight:800,letterSpacing:.6,opacity:busy?.6:1}},tok.trim()?'SAVE TOKEN AND BACK UP NOW':'REMOVE TOKEN')
+        ],
         bkMsg?ce('div',{role:'status',style:{marginTop:10,fontSize:12.5,color:C.textDim,lineHeight:1.4}},bkMsg):null)));
 }
 
@@ -1272,6 +1353,7 @@ function WorkoutTracker(props) {
   var s11=useState(false), addOk     =s11[0], setAddOk     =s11[1];
   var s12=useState(null),  showPBs   =s12[0], setShowPBs   =s12[1];   // null | 'all' | 'last'
   var s13=useState(false), showSettings=s13[0], setShowSettings=s13[1];
+  var s14=useState(false), locked=s14[0], setLocked=s14[1];
   var s14=useState(null), expandedRing=s14[0], setExpandedRing=s14[1];   // null | 'pbs' | 'hit' | 'vol'
   var s15=useState(10),   chartRange=s15[0],   setChartRange=s15[1];     // 10 | 25 | 0 (= all)
   var s16=useState(false),showTrend=s16[0],    setShowTrend=s16[1];
@@ -1312,6 +1394,9 @@ function WorkoutTracker(props) {
         });
     }
     doFetch().then(function(raw){
+      binLoaded[person]=true;
+      if(raw && typeof raw==='object' && validEnc(raw.ghTokenEnc)) binEnc[person]=raw.ghTokenEnc; else delete binEnc[person];
+      setLocked(backupLocked(person));
       var clean=cleanBin(raw), seed=SEEDS[person]||[];
       var ws = clean.workouts.length>0 ? clean.workouts : null;
       var goalsToUse = clean.goals;
@@ -1708,7 +1793,12 @@ function WorkoutTracker(props) {
       })),
 
     showAdd?ce(AddModal,mProps):null,
-    showSettings?ce(SettingsSheet,{person:person,backupNow:function(){return ghBackup(person,{v:2,workouts:workouts||[],goals:goals});},goals:goals,onSave:function(ng){dirty.current=true;setGoals(ng);},onClose:function(){setShowSettings(false);}}):null);
+    (locked && !showSettings)?ce('button',{onClick:function(){setShowSettings(true);},
+      style:{position:'fixed',left:'50%',transform:'translateX(-50%)',bottom:16,zIndex:90,maxWidth:'calc(100% - 32px)',background:C.surface2,border:'1px solid '+C.borderHi,color:C.text,borderRadius:999,padding:'10px 16px',fontSize:12.5,fontWeight:700,cursor:'pointer',boxShadow:'0 6px 20px rgba(0,0,0,.4)'}},
+      '🔒 Backups paused on this device. Tap to unlock'):null,
+    showSettings?ce(SettingsSheet,{person:person,backupNow:function(){return ghBackup(person,{v:2,workouts:workouts||[],goals:goals});},
+      saveProfile:function(){ if(workouts===null) return Promise.reject(new Error('not loaded')); return saveBin(person,{v:2,workouts:workouts,goals:goals}); },
+      onLockChange:function(){ setLocked(backupLocked(person)); },goals:goals,onSave:function(ng){dirty.current=true;setGoals(ng);},onClose:function(){setShowSettings(false);setLocked(backupLocked(person));}}):null);
 }
 
 // ── App ───────────────────────────────────────────────────
