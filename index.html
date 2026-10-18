@@ -1270,7 +1270,7 @@ function SettingsSheet(props) {
         function(){ done('Removed from this device, but your profile could not be updated. Try again when online.'); });
       return;
     }
-    if(pass.length<8){ setBkMsg('Choose a passphrase of at least 8 characters. A few random words works well.'); return; }
+    if(pass.length<4){ setBkMsg('Choose a passphrase of at least 4 characters.'); return; }
     if(!cryptoOk()){ setBkMsg('This browser cannot lock the token. Open the hosted site over https.'); return; }
     setBusy(true); setBkMsg('Locking and saving to your profile…');
     lockToken(t,pass).then(function(enc){
@@ -1330,7 +1330,7 @@ function SettingsSheet(props) {
         ] : [
           ce('p',{key:'np',style:{color:C.textDim,fontSize:12.5,marginTop:6,marginBottom:12,lineHeight:1.45}},'Paste a GitHub token once and every save also writes your full history to data/'+props.person+'.json in the repo. The token is saved in your profile, locked with a passphrase. If this device forgets it, you only type the passphrase.'),
           ce('input',{key:'nt',type:'password',autoComplete:'off',placeholder:'github_pat_…',value:tok,onChange:function(e){setTok(e.target.value);},style:Object.assign({},iSt,{marginBottom:10})}),
-          tok.trim()?ce('input',{key:'npw',type:'password',autoComplete:'new-password',placeholder:'Backup passphrase (8+ characters)',value:pass,onChange:function(e){setPass(e.target.value);},style:Object.assign({},iSt,{marginBottom:10})}):null,
+          tok.trim()?ce('input',{key:'npw',type:'password',autoComplete:'new-password',placeholder:'Backup passphrase (4+ characters)',value:pass,onChange:function(e){setPass(e.target.value);},style:Object.assign({},iSt,{marginBottom:10})}):null,
           ce('button',{key:'nb',onClick:backup,disabled:busy,style:{width:'100%',background:C.surface3,border:'1px solid '+C.borderHi,color:C.text,borderRadius:12,padding:'13px',cursor:'pointer',fontSize:13,fontWeight:800,letterSpacing:.6,opacity:busy?.6:1}},tok.trim()?'SAVE TOKEN AND BACK UP NOW':'REMOVE TOKEN')
         ],
         bkMsg?ce('div',{role:'status',style:{marginTop:10,fontSize:12.5,color:C.textDim,lineHeight:1.4}},bkMsg):null)));
