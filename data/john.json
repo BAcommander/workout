@@ -1,5 +1,5 @@
 {
- "backedUp": "2026-10-18T12:49:24.951Z",
+ "backedUp": "2026-10-20T17:54:17.216Z",
  "v": 2,
  "workouts": [
   {
@@ -13044,6 +13044,260 @@
       {
        "reps": 7,
        "weight": 68
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "w-2026-10-20",
+   "date": "2026-10-20",
+   "label": "Tue 20 Oct",
+   "exercises": [
+    {
+     "name": "Bicep Curl",
+     "sets": [
+      {
+       "reps": 5,
+       "weight": 59
+      },
+      {
+       "reps": 10,
+       "weight": 61
+      },
+      {
+       "reps": 9,
+       "weight": 61
+      },
+      {
+       "reps": 8,
+       "weight": 61
+      },
+      {
+       "reps": 6,
+       "weight": 46
+      }
+     ]
+    },
+    {
+     "name": "Rear Delt Fly",
+     "sets": [
+      {
+       "reps": 15,
+       "weight": 56
+      },
+      {
+       "reps": 12,
+       "weight": 56
+      },
+      {
+       "reps": 12,
+       "weight": 59
+      },
+      {
+       "reps": 6,
+       "weight": 47
+      }
+     ]
+    },
+    {
+     "name": "Squat",
+     "sets": [
+      {
+       "reps": 13,
+       "weight": 27
+      },
+      {
+       "reps": 10,
+       "weight": 32
+      },
+      {
+       "reps": 12,
+       "weight": 32
+      }
+     ]
+    },
+    {
+     "name": "Bench Press",
+     "sets": [
+      {
+       "reps": 7,
+       "weight": 57.5
+      },
+      {
+       "reps": 9,
+       "weight": 57.5
+      },
+      {
+       "reps": 9,
+       "weight": 57.5
+      }
+     ]
+    },
+    {
+     "name": "Low row",
+     "sets": [
+      {
+       "reps": 10,
+       "weight": 114
+      },
+      {
+       "reps": 10,
+       "weight": 114
+      },
+      {
+       "reps": 10,
+       "weight": 91.5
+      }
+     ]
+    },
+    {
+     "name": "Pulldown",
+     "sets": [
+      {
+       "reps": 10,
+       "weight": 85
+      },
+      {
+       "reps": 10,
+       "weight": 75
+      },
+      {
+       "reps": 10,
+       "weight": 75
+      }
+     ]
+    },
+    {
+     "name": "Lateral Raise",
+     "sets": [
+      {
+       "reps": 20,
+       "weight": 9
+      },
+      {
+       "reps": 20,
+       "weight": 9
+      },
+      {
+       "reps": 20,
+       "weight": 9
+      }
+     ]
+    },
+    {
+     "name": "Pushdown",
+     "sets": [
+      {
+       "reps": 10,
+       "weight": 68
+      },
+      {
+       "reps": 12,
+       "weight": 59
+      },
+      {
+       "reps": 8,
+       "weight": 59
+      }
+     ]
+    },
+    {
+     "name": "Cable Crossover",
+     "sets": [
+      {
+       "reps": 10,
+       "weight": 9
+      },
+      {
+       "reps": 12,
+       "weight": 11
+      },
+      {
+       "reps": 15,
+       "weight": 11
+      }
+     ]
+    },
+    {
+     "name": "Hammer Curl Cable",
+     "sets": [
+      {
+       "reps": 11,
+       "weight": 36
+      },
+      {
+       "reps": 11,
+       "weight": 41
+      },
+      {
+       "reps": 11,
+       "weight": 41
+      }
+     ]
+    },
+    {
+     "name": "Leg Extension",
+     "sets": [
+      {
+       "reps": 14,
+       "weight": 106
+      },
+      {
+       "reps": 11,
+       "weight": 93
+      }
+     ]
+    },
+    {
+     "name": "Smith shoulder press",
+     "sets": [
+      {
+       "reps": 10,
+       "weight": 31
+      },
+      {
+       "reps": 8,
+       "weight": 31
+      },
+      {
+       "reps": 8,
+       "weight": 28.5
+      }
+     ]
+    },
+    {
+     "name": "Inner Thigh",
+     "sets": [
+      {
+       "reps": 10,
+       "weight": 91
+      },
+      {
+       "reps": 10,
+       "weight": 91
+      }
+     ]
+    },
+    {
+     "name": "Outer Thigh",
+     "sets": [
+      {
+       "reps": 10,
+       "weight": 93
+      },
+      {
+       "reps": 10,
+       "weight": 93
+      }
+     ]
+    },
+    {
+     "name": "Body weight Dips",
+     "sets": [
+      {
+       "reps": 14,
+       "weight": 75
       }
      ]
     }
