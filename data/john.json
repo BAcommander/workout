@@ -1,5 +1,5 @@
 {
- "backedUp": "2026-11-15T13:43:10.662Z",
+ "backedUp": "2026-11-19T22:53:39.836Z",
  "v": 2,
  "workouts": [
   {
@@ -15354,6 +15354,282 @@
       {
        "reps": 11,
        "weight": 59
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "w-2026-11-19",
+   "date": "2026-11-19",
+   "label": "Thu 19 Nov",
+   "exercises": [
+    {
+     "name": "Incline Bench Press",
+     "sets": [
+      {
+       "reps": 10,
+       "weight": 45
+      },
+      {
+       "reps": 10,
+       "weight": 45
+      },
+      {
+       "reps": 10,
+       "weight": 47.5
+      },
+      {
+       "reps": 9,
+       "weight": 47.5
+      }
+     ]
+    },
+    {
+     "name": "Outer Thigh",
+     "sets": [
+      {
+       "reps": 12,
+       "weight": 93
+      },
+      {
+       "reps": 17,
+       "weight": 91
+      },
+      {
+       "reps": 12,
+       "weight": 93
+      }
+     ]
+    },
+    {
+     "name": "Inner Thigh",
+     "sets": [
+      {
+       "reps": 12,
+       "weight": 86
+      },
+      {
+       "reps": 10,
+       "weight": 86
+      },
+      {
+       "reps": 8,
+       "weight": 84
+      }
+     ]
+    },
+    {
+     "name": "Bicep Curl",
+     "sets": [
+      {
+       "reps": 10,
+       "weight": 47
+      },
+      {
+       "reps": 10,
+       "weight": 50
+      },
+      {
+       "reps": 10,
+       "weight": 50
+      }
+     ]
+    },
+    {
+     "name": "Rear Delt Fly",
+     "sets": [
+      {
+       "reps": 14,
+       "weight": 54
+      },
+      {
+       "reps": 12,
+       "weight": 59
+      },
+      {
+       "reps": 14,
+       "weight": 59
+      }
+     ]
+    },
+    {
+     "name": "Bench Press",
+     "sets": [
+      {
+       "reps": 5,
+       "weight": 50
+      },
+      {
+       "reps": 6,
+       "weight": 65
+      },
+      {
+       "reps": 5,
+       "weight": 60
+      },
+      {
+       "reps": 5,
+       "weight": 60
+      },
+      {
+       "reps": 3,
+       "weight": 70
+      }
+     ]
+    },
+    {
+     "name": "Cable Chest Fly",
+     "sets": [
+      {
+       "reps": 10,
+       "weight": 46
+      },
+      {
+       "reps": 10,
+       "weight": 50
+      },
+      {
+       "reps": 10,
+       "weight": 50
+      }
+     ]
+    },
+    {
+     "name": "Triceps Extension",
+     "sets": [
+      {
+       "reps": 11,
+       "weight": 50
+      },
+      {
+       "reps": 10,
+       "weight": 50
+      },
+      {
+       "reps": 9,
+       "weight": 50
+      }
+     ]
+    },
+    {
+     "name": "Pushdown",
+     "sets": [
+      {
+       "reps": 10,
+       "weight": 55
+      },
+      {
+       "reps": 10,
+       "weight": 59
+      },
+      {
+       "reps": 12,
+       "weight": 59
+      }
+     ]
+    },
+    {
+     "name": "Rear Delt Cable",
+     "sets": [
+      {
+       "reps": 12,
+       "weight": 14
+      },
+      {
+       "reps": 12,
+       "weight": 14
+      },
+      {
+       "reps": 14,
+       "weight": 14
+      }
+     ]
+    },
+    {
+     "name": "Lateral Raise",
+     "sets": [
+      {
+       "reps": 20,
+       "weight": 9
+      },
+      {
+       "reps": 20,
+       "weight": 9
+      },
+      {
+       "reps": 20,
+       "weight": 9
+      }
+     ]
+    },
+    {
+     "name": "Hammer Curl Cable",
+     "sets": [
+      {
+       "reps": 12,
+       "weight": 55
+      },
+      {
+       "reps": 9,
+       "weight": 59
+      },
+      {
+       "reps": 12,
+       "weight": 64
+      }
+     ]
+    },
+    {
+     "name": "Deadlift",
+     "sets": [
+      {
+       "reps": 10,
+       "weight": 90
+      }
+     ]
+    },
+    {
+     "name": "Smith shoulder press",
+     "sets": [
+      {
+       "reps": 4,
+       "weight": 41
+      },
+      {
+       "reps": 9,
+       "weight": 31
+      }
+     ]
+    },
+    {
+     "name": "Leg Press",
+     "sets": [
+      {
+       "reps": 10,
+       "weight": 162
+      },
+      {
+       "reps": 10,
+       "weight": 162
+      }
+     ]
+    },
+    {
+     "name": "Lat Pulldown",
+     "sets": [
+      {
+       "reps": 10,
+       "weight": 88
+      }
+     ]
+    },
+    {
+     "name": "Upright Row",
+     "sets": [
+      {
+       "reps": 8,
+       "weight": 77
       }
      ]
     }
